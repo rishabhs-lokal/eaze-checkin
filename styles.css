@@ -31,11 +31,27 @@
   --black-100: #000000;
   --white-100: #FFFFFF;
 
-  --font-display: "Fraunces", Georgia, serif;
+  /* Punchier accent used for headlines, the wordmark, and hero numbers —
+     matches the reference app's brand mark. Distinct from --primary-500,
+     which stays reserved for buttons/interactive controls. */
+  --brand: #FF5722;
+
+  /* One font family throughout — hierarchy comes from weight (800/900) and
+     tight negative letter-spacing on headings, not a second display face. */
+  --font-display: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --font-ui: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
 * { box-sizing: border-box; }
+
+/* Form controls don't inherit font-family from the page by default in the
+   browser's own UA stylesheet — without this, every <button>, <input>, and
+   <textarea> silently renders in the system default (e.g. Arial) instead of
+   the app's fonts. This is what was making buttons/links look inconsistent
+   even though every other element correctly used the intended font stack. */
+button, input, textarea, select {
+  font-family: inherit;
+}
 
 html {
   -webkit-text-size-adjust: 100%;
@@ -62,7 +78,9 @@ body {
   position: fixed;
   inset: 0;
   z-index: -1;
-  background: linear-gradient(180deg, var(--primary-800) 0%, #2a1730 38%, var(--secondary-800) 100%);
+  background:
+    radial-gradient(ellipse 80% 40% at 20% 0%, rgba(255, 87, 34, 0.22) 0%, transparent 70%),
+    #09091A;
 }
 
 .container {
@@ -95,14 +113,14 @@ body {
 
 .headline {
   font-family: var(--font-display);
-  font-optical-sizing: auto;
-  font-variation-settings: "SOFT" 60;
-  font-weight: 600;
-  font-size: 28px;
-  line-height: 32px;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+  font-size: 21px;
+  line-height: 26px;
   margin: 0;
   color: var(--white-100);
   max-width: 380px;
+  white-space: nowrap;
 }
 
 .eaze-logo {
@@ -138,6 +156,16 @@ body {
 
 .streak-pill-icon { font-size: 14px; }
 
+/* The one branded accent inside otherwise-UI-font text: hero numbers (streak
+   counts, score) get heavy weight + tight letter-spacing + the brand color,
+   so a glance at any stat feels recognizably part of this app. */
+.stat-num {
+  font-family: var(--font-display);
+  font-weight: 900;
+  letter-spacing: -0.5px;
+  color: var(--primary-500);
+}
+
 /* ---------- Card surface ---------- */
 .card {
   background: rgba(255, 255, 255, 0.06);
@@ -162,6 +190,97 @@ body {
 }
 
 .section-icon { font-size: 16px; }
+
+/* ---------- Score card ---------- */
+/* Deliberately breaks from the orange language used everywhere else (streak,
+   mood chart, reaffirm card) — a darker violet surface makes this the one
+   card that visually announces itself as something different: progress/status. */
+.score-card {
+  padding: 18px 22px;
+  background: linear-gradient(135deg, rgba(111, 61, 213, 0.32), rgba(19, 13, 33, 0.85));
+  border: 1px solid rgba(194, 165, 253, 0.35);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.06) inset, 0 12px 32px rgba(0, 0, 0, 0.4);
+}
+
+.score-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.score-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--secondary-100);
+}
+
+.score-icon {
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+}
+
+.score-value-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.score-value {
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 900;
+  letter-spacing: -0.5px;
+  color: var(--secondary-200);
+  text-shadow: 0 0 18px rgba(194, 165, 253, 0.45);
+}
+
+.score-bonus-chip {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: rgba(51, 191, 48, 0.18);
+  color: var(--success-500);
+  border: 1px solid rgba(51, 191, 48, 0.4);
+  white-space: nowrap;
+  animation: fadeInUp 0.3s ease;
+}
+
+.score-bar-track {
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+}
+
+.score-bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--secondary-500), var(--secondary-200));
+  box-shadow: 0 0 10px rgba(111, 61, 213, 0.6);
+  width: 0%;
+  transition: width 0.5s ease;
+}
+
+.score-bar-fill.just-bonus { animation: scoreBonusPulse 0.7s ease; }
+
+@keyframes scoreBonusPulse {
+  0% { filter: brightness(1); }
+  50% { filter: brightness(1.6); box-shadow: 0 0 14px rgba(255, 158, 68, 0.8); }
+  100% { filter: brightness(1); }
+}
+
+.score-caption {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: rgba(234, 224, 255, 0.6);
+}
 
 /* ---------- Entry card ---------- */
 .entry-prompt {
@@ -464,7 +583,7 @@ body {
 }
 
 @media (max-width: 420px) {
-  .headline { font-size: 24px; line-height: 30px; }
+  .headline { font-size: 18px; line-height: 23px; }
   .mood-circle { width: 44px; height: 44px; }
   .mood-option .emoji { font-size: 22px; }
   .mood-option .mood-label { font-size: 10px; }
@@ -502,18 +621,17 @@ body {
 }
 
 .login-wordmark {
-  font-family: var(--font-ui);
-  font-size: 22px;
-  font-weight: 700;
-  letter-spacing: 0.5px;
-  color: var(--white-100);
+  font-family: var(--font-display);
+  font-size: 34px;
+  font-weight: 900;
+  letter-spacing: -1.5px;
+  color: #FFFFFF;
 }
 
 .login-headline {
   font-family: var(--font-display);
-  font-optical-sizing: auto;
-  font-variation-settings: "SOFT" 60;
-  font-weight: 600;
+  font-weight: 800;
+  letter-spacing: -0.5px;
   font-size: 24px;
   line-height: 30px;
   text-align: center;
