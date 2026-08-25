@@ -1,0 +1,60 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: eaze-api
+  namespace: eaze
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: eaze-api
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: eaze-api
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+      containers:
+        - name: eaze-api
+          image: eaze-backend:latest # replace with your built & pushed image tag
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+          envFrom:
+            - configMapRef:
+                name: eaze-api-config
+            - secretRef:
+                name: eaze-api-secrets
+          # Liveness never touches the database (see app/routers/health.py) —
+          # a slow DB shouldn't get a healthy pod killed and restarted.
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          # Readiness does check the database, so the Service stops routing
+          # traffic to a pod that can't reach Postgres, without restarting it.
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+      terminationGracePeriodSeconds: 30

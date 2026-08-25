@@ -1,0 +1,11 @@
+# Bundles the long-lived resources. The migration Job is deliberately left
+# out — it's immutable once created, so it's deleted and reapplied as its
+# own step in scripts/deploy.sh rather than folded into `kubectl apply -k`.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: eaze
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - deployment.yaml
+  - service.yaml

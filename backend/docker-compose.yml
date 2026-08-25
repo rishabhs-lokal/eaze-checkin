@@ -1,0 +1,44 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: eaze
+      POSTGRES_PASSWORD: eaze
+      POSTGRES_DB: eaze
+    ports:
+      - "5432:5432"
+    volumes:
+      - eaze_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U eaze -d eaze"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Runs `alembic upgrade head` once and exits. `app` waits for this to
+  # succeed before starting, mirroring the migration Job that runs ahead of
+  # the Deployment rollout in Kubernetes.
+  migrate:
+    build: .
+    command: ["./scripts/migrate.sh"]
+    environment:
+      DATABASE_URL: postgresql://eaze:eaze@db:5432/eaze
+    depends_on:
+      db:
+        condition: service_healthy
+
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      APP_ENV: local
+      DATABASE_URL: postgresql://eaze:eaze@db:5432/eaze
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+volumes:
+  eaze_pgdata:

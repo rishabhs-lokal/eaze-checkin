@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: eaze-api-config
+  namespace: eaze
+data:
+  APP_ENV: "production"
+  LOG_LEVEL: "info"
+  # Total connections opened against Postgres is roughly
+  # replicas * (DB_POOL_SIZE + DB_MAX_OVERFLOW) — raise Postgres's
+  # max_connections in step with deployment.yaml's replica count.
+  DB_POOL_SIZE: "5"
+  DB_MAX_OVERFLOW: "5"

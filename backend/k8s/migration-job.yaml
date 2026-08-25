@@ -1,0 +1,40 @@
+# Runs `alembic upgrade head` to completion, then exits — the Kubernetes-native
+# way to run a task exactly once per deploy, ahead of the Deployment rollout.
+#
+# Jobs are immutable once created, so a fresh deploy must delete the previous
+# run first (see scripts/deploy.sh):
+#   kubectl delete job/eaze-api-migrate -n eaze --ignore-not-found
+#   kubectl apply -f k8s/migration-job.yaml
+#   kubectl wait --for=condition=complete job/eaze-api-migrate -n eaze --timeout=120s
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: eaze-api-migrate
+  namespace: eaze
+spec:
+  backoffLimit: 2
+  ttlSecondsAfterFinished: 3600
+  template:
+    spec:
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+      containers:
+        - name: migrate
+          image: eaze-backend:latest # replace with your built & pushed image tag
+          imagePullPolicy: IfNotPresent
+          command: ["./scripts/migrate.sh"]
+          envFrom:
+            - configMapRef:
+                name: eaze-api-config
+            - secretRef:
+                name: eaze-api-secrets
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
