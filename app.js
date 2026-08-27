@@ -72,6 +72,24 @@ const COUNTRIES = [
 
 const TEST_PHONES = ["9999999999"];
 const EAZE_LOGO_SRC = "assets/eaze-logo.png?v=3";
+const EAZE_LOGO_WHITE_SRC = "assets/eaze-logo-white.png?v=1";
+
+// One outline icon family: thin stroke, rounded joins, no fill — used in
+// place of decorative emoji anywhere an emoji would otherwise sit inside a
+// colored/rounded container (mood emoji stay as emoji — that's the user's
+// own selected data, not decoration).
+const ICONS = {
+  flame:
+    '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 3c1.2 2.4 3.6 3.9 3.6 7.2a3.6 3.6 0 0 1-1.2 2.7c1.8-.3 3-1.8 3-3.9 1.5 1.8 2.4 3.9 2.4 6 0 3.6-3 6-7.8 6S4.2 19.6 4.2 16c0-4.2 3-6.6 4.8-9.6.3 1.8 1.5 3 1.5 3S9 6.6 12 3Z" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  // Filled variant of the same flame — marks the streak as active, per the
+  // handbook's outline/filled pairing convention.
+  flameFilled:
+    '<svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M12 3c1.2 2.4 3.6 3.9 3.6 7.2a3.6 3.6 0 0 1-1.2 2.7c1.8-.3 3-1.8 3-3.9 1.5 1.8 2.4 3.9 2.4 6 0 3.6-3 6-7.8 6S4.2 19.6 4.2 16c0-4.2 3-6.6 4.8-9.6.3 1.8 1.5 3 1.5 3S9 6.6 12 3Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>',
+  trend:
+    '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 16l5-5 4 4 7-8" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/><path d="M15 7h4v4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  flask:
+    '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M9 3h6M10 3v5.5L5.5 17a2 2 0 0 0 1.8 3h9.4a2 2 0 0 0 1.8-3L14 8.5V3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+};
 
 function moodByValue(value) {
   return MOODS.find((m) => m.value === value) || MOODS[2];
@@ -312,7 +330,7 @@ function testModeModal() {
   return `
     <div id="test-modal-overlay" class="test-modal-overlay">
       <div class="test-modal">
-        <div class="test-modal-title"><span>🧪</span><h2>Tester Mode</h2></div>
+        <div class="test-modal-title"><span class="test-modal-title-icon">${ICONS.flask}</span><h2>Tester Mode</h2></div>
         <p class="test-modal-subtitle">You're logged in with a test number. Choose a scenario to preview:</p>
         <div class="test-modal-options">
           ${Object.entries(SCENARIOS)
@@ -377,21 +395,21 @@ function checkinPage() {
             <h1 class="headline">How are you feeling today?</h1>
           </div>
           <div class="eaze-logo" aria-label="Eaze">
-            <img src="${EAZE_LOGO_SRC}" alt="Eaze" width="44" height="44" />
+            <img src="${EAZE_LOGO_WHITE_SRC}" alt="Eaze" width="44" height="44" />
           </div>
         </div>
-        <div class="streak-pill" id="streak-pill">
-          <span class="streak-pill-icon">🔥</span>
-          <span id="streak-pill-text"></span>
+        <div class="streak-row" id="streak-pill">
+          <span class="streak-icon">${ICONS.flameFilled}</span>
+          <span class="streak-text" id="streak-pill-text"></span>
         </div>
       </header>
 
       <section class="card score-card" id="score-card">
         <div class="score-header">
-          <span class="score-label"><img src="${EAZE_LOGO_SRC}" alt="" class="score-icon" /> Eaze Score</span>
+          <span class="score-label"><img src="${EAZE_LOGO_WHITE_SRC}" alt="" class="score-icon" /> Eaze Score</span>
           <span class="score-value-row">
             <span class="score-value" id="score-value">0</span>
-            <span class="score-bonus-chip" id="score-bonus-chip" hidden>🎉 +${WEEKLY_STREAK_BONUS} bonus!</span>
+            <span class="score-bonus-text" id="score-bonus-chip" hidden>+${WEEKLY_STREAK_BONUS} bonus</span>
           </span>
         </div>
         <div class="score-bar-track">
@@ -412,12 +430,12 @@ function checkinPage() {
           rows="3"
         ></textarea>
 
-        <button class="pill-btn pill-btn--primary" id="save-btn" disabled>
+        <button class="btn btn--filled" id="save-btn" disabled>
           <span id="save-btn-label">Save</span>
         </button>
 
         <p class="done-note" id="done-note" hidden>
-          You've checked in today ✨ — come back tomorrow to keep your streak going.
+          You've checked in today — come back tomorrow to keep your streak going.
         </p>
       </section>
 
@@ -427,7 +445,7 @@ function checkinPage() {
 
       <div class="grid-two">
         <section class="card chart-card">
-          <h2 class="section-label"><span class="section-icon">📈</span>Mood Over Time</h2>
+          <h2 class="section-label"><span class="section-icon">${ICONS.trend}</span>Mood Over Time</h2>
           <div id="chart-wrap" class="chart-wrap">
             <div id="chart-scroll" class="chart-scroll">
               <svg id="mood-chart"></svg>
@@ -440,7 +458,7 @@ function checkinPage() {
         </section>
 
         <section class="card streak-card">
-          <h2 class="section-label"><span class="section-icon">🔥</span>Your Streak</h2>
+          <h2 class="section-label"><span class="section-icon">${ICONS.flame}</span>Your Streak</h2>
           <div class="streak-dots" id="streak-dots"></div>
           <p class="streak-caption" id="streak-caption"></p>
         </section>
@@ -502,7 +520,7 @@ function wireLoginEvents() {
       fill?.classList.remove("crawling");
       fill?.classList.add("done");
       const label = document.getElementById("login-btn-label");
-      if (label) label.textContent = "✓ Logged in!";
+      if (label) label.textContent = "✓ Logged in";
 
       setTimeout(() => {
         if (state.isTester) {
@@ -831,7 +849,7 @@ function renderScore() {
   els.scoreBarFill.style.width = `${pct}%`;
   els.scoreCaption.innerHTML =
     count >= 7
-      ? "Full week complete — weekly bonus earned!"
+      ? "Full week complete — weekly bonus earned"
       : `<span class="stat-num">${count}</span>/<span class="stat-num">7</span> days checked in this week · +<span class="stat-num">${WEEKLY_STREAK_BONUS}</span> bonus at <span class="stat-num">7</span>`;
 
   // One-shot celebration: show it for this render only, then consume the flag
