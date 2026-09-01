@@ -6,7 +6,8 @@
   --primary-500: #FF9E44;
   --primary-800: #552A02;
 
-  /* Brand — Secondary (violet) */
+  /* Brand — Secondary (violet). Sparing use, alongside or instead of orange
+     for a distinct semantic meaning — never a second primary/filled accent. */
   --secondary-50: #FAF8FF;
   --secondary-100: #EAE0FF;
   --secondary-200: #C2A5FD;
@@ -27,15 +28,35 @@
   --error-500: #D41A23;
   --error-800: #6E0005;
 
-  /* Base */
-  --black-100: #000000;
+  /* Base — off-black, never pure black/white */
+  --bg: #171A1D;
   --white-100: #FFFFFF;
 
-  --font-display: "Fraunces", Georgia, serif;
+  /* Text/border hierarchy on dark = white stepped down, not hex greys */
+  --white-10: rgba(255, 255, 255, 0.10);
+  --white-20: rgba(255, 255, 255, 0.20);
+  --white-40: rgba(255, 255, 255, 0.40);
+  --white-50: rgba(255, 255, 255, 0.50);
+  --white-60: rgba(255, 255, 255, 0.60);
+  --white-70: rgba(255, 255, 255, 0.70);
+  --white-80: rgba(255, 255, 255, 0.80);
+
+  /* The one approved shadow in the system — overlays/temporary surfaces only */
+  --shadow-overlay: 0 2px 4px rgba(0, 0, 0, 0.10);
+
+  /* Fraunces = headlines only (never below 24px). Plus Jakarta Sans = everything else. */
+  --font-display: "Fraunces", Georgia, "Times New Roman", serif;
   --font-ui: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
 * { box-sizing: border-box; }
+
+/* Form controls don't inherit font-family from the page by default in the
+   browser's own UA stylesheet — without this, every <button>, <input>, and
+   <textarea> silently renders in the system default instead of the app's fonts. */
+button, input, textarea, select {
+  font-family: inherit;
+}
 
 html {
   -webkit-text-size-adjust: 100%;
@@ -58,17 +79,23 @@ body {
   touch-action: manipulation;
 }
 
+/* Deliberate, explicit departure from the design handbook's "no gradients /
+   solid #171A1D only" background rule — user asked for this exact grey→orange
+   blurred gradient over the handbook default. Scoped to just the screen
+   background; every other surface in the app stays handbook-compliant. */
 .gradient-bg {
   position: fixed;
   inset: 0;
   z-index: -1;
-  background: linear-gradient(180deg, var(--primary-800) 0%, #2a1730 38%, var(--secondary-800) 100%);
+  background:
+    radial-gradient(ellipse 55% 65% at 76% 42%, rgba(255, 158, 68, 0.65) 0%, transparent 70%),
+    linear-gradient(100deg, #928678 0%, #4b4038 42%, #241a12 78%, #1c1310 100%);
 }
 
 .container {
   max-width: 720px;
   margin: 0 auto;
-  padding: 28px 20px 64px;
+  padding: 28px 16px 64px;
 }
 
 /* ---------- Header ---------- */
@@ -86,7 +113,8 @@ body {
 
 .eyebrow {
   margin: 0 0 6px;
-  font-size: 12px;
+  font-size: 14px;
+  line-height: 18px;
   font-weight: 700;
   letter-spacing: 1px;
   text-transform: uppercase;
@@ -95,14 +123,12 @@ body {
 
 .headline {
   font-family: var(--font-display);
-  font-optical-sizing: auto;
-  font-variation-settings: "SOFT" 60;
   font-weight: 600;
-  font-size: 28px;
-  line-height: 32px;
+  font-variation-settings: "opsz" 144, "SOFT" 100;
+  font-size: 24px;
+  line-height: 30px;
   margin: 0;
   color: var(--white-100);
-  max-width: 380px;
 }
 
 .eaze-logo {
@@ -111,7 +137,6 @@ body {
   flex-shrink: 0;
   border-radius: 12px;
   overflow: hidden;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 }
 
 .eaze-logo img {
@@ -121,32 +146,41 @@ body {
   object-fit: cover;
 }
 
-.streak-pill {
-  display: inline-flex;
+.streak-row {
+  display: flex;
   align-items: center;
   gap: 6px;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  border-radius: 999px;
-  padding: 8px 14px;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.5px;
-  white-space: nowrap;
-  backdrop-filter: blur(6px);
 }
 
-.streak-pill-icon { font-size: 14px; }
+.streak-icon {
+  width: 16px;
+  height: 16px;
+  color: var(--primary-500);
+  flex-shrink: 0;
+}
+
+.streak-text {
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 400;
+  color: var(--white-80);
+}
+
+/* The one branded accent inside otherwise-UI-font text: hero numbers (streak
+   counts, score) get Bold weight + the brand color, so a glance at any stat
+   feels recognizably part of this app. */
+.stat-num {
+  font-weight: 700;
+  color: var(--primary-500);
+}
 
 /* ---------- Card surface ---------- */
 .card {
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--white-10);
+  border: 1px solid var(--primary-500);
   border-radius: 20px;
   padding: 22px;
   margin-bottom: 16px;
-  backdrop-filter: blur(10px);
-  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.06) inset, 0 10px 30px rgba(0, 0, 0, 0.16);
 }
 
 .section-label {
@@ -161,36 +195,150 @@ body {
   color: var(--white-100);
 }
 
-.section-icon { font-size: 16px; }
+.section-icon {
+  width: 18px;
+  height: 18px;
+  color: var(--primary-500);
+  flex-shrink: 0;
+}
+
+/* ---------- Score card ---------- */
+/* Secondary (purple) used sparingly for this one card's accent — a distinct
+   semantic meaning (progress/status) from the primary orange used elsewhere —
+   never a second filled/gradient treatment. */
+.score-card {
+  padding: 18px 22px;
+  background: var(--white-10);
+  border: 1px solid var(--primary-500);
+}
+
+.score-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.score-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 400;
+  color: var(--white-80);
+}
+
+.score-icon {
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+}
+
+.score-value-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.score-value {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-variation-settings: "opsz" 144, "SOFT" 100;
+  font-size: 24px;
+  line-height: 30px;
+  color: var(--primary-500);
+}
+
+.score-bonus-text {
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 700;
+  color: var(--success-500);
+  white-space: nowrap;
+  animation: fadeInUp 0.3s ease;
+}
+
+.score-bar-track {
+  position: relative;
+  height: 8px;
+  border-radius: 8px;
+  background: var(--white-10);
+}
+
+.score-bar-fill {
+  position: relative;
+  height: 100%;
+  border-radius: 8px;
+  background: var(--primary-500);
+  width: 0%;
+  transition: width 0.5s ease;
+}
+
+/* Leading marker riding at the head of the fill — same white mark used in
+   the header, in a small orange badge matching the app icon's own treatment. */
+.score-bar-fill::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translate(50%, -50%);
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background-color: var(--primary-500);
+  background-image: url("assets/eaze-logo-white.png?v=1");
+  background-size: 65%;
+  background-repeat: no-repeat;
+  background-position: center;
+}
+
+.score-bar-fill.just-bonus { animation: scoreBonusPulse 0.7s ease; }
+
+@keyframes scoreBonusPulse {
+  0% { filter: brightness(1); }
+  50% { filter: brightness(1.5); }
+  100% { filter: brightness(1); }
+}
+
+.score-caption {
+  margin: 8px 0 0;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--white-60);
+}
 
 /* ---------- Entry card ---------- */
 .entry-prompt {
   margin: 0 0 14px;
   font-size: 14px;
-  font-weight: 600;
-  color: rgba(255, 255, 255, 0.85);
+  line-height: 20px;
+  font-weight: 700;
+  color: var(--white-80);
 }
 
 .field-label {
   display: block;
-  font-size: 13px;
-  font-weight: 500;
-  color: rgba(255, 255, 255, 0.6);
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 400;
+  color: var(--white-60);
   margin: 22px 0 10px;
 }
 
 .optional-tag {
   font-weight: 400;
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--white-40);
 }
 
 .reflection-textarea {
   width: 100%;
   resize: vertical;
   min-height: 96px;
-  background: rgba(0, 0, 0, 0.18);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 14px;
+  background: var(--white-10);
+  border: 1px solid var(--white-20);
+  border-radius: 12px;
   padding: 14px 16px;
   font-family: var(--font-ui);
   font-size: 16px;
@@ -200,7 +348,7 @@ body {
   transition: border-color 0.15s ease;
 }
 
-.reflection-textarea::placeholder { color: rgba(255, 255, 255, 0.5); }
+.reflection-textarea::placeholder { color: var(--white-40); }
 
 .reflection-textarea:focus { border-color: var(--primary-200); }
 
@@ -230,7 +378,7 @@ body {
   cursor: pointer;
   touch-action: manipulation;
   font-family: var(--font-ui);
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--white-60);
 }
 
 .mood-circle {
@@ -240,88 +388,85 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1.5px solid rgba(255, 255, 255, 0.16);
-  background: rgba(255, 255, 255, 0.04);
-  transition: transform 0.15s ease, background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+  border: 1.5px solid var(--white-20);
+  background: var(--white-10);
+  transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
 }
 
-.mood-option:hover .mood-circle { border-color: rgba(255, 255, 255, 0.35); }
+.mood-option:hover .mood-circle { border-color: var(--white-40); }
 
 .mood-option .emoji { font-size: 26px; line-height: 1; }
 
 .mood-option .mood-label {
   font-size: 11px;
+  line-height: 16px;
   letter-spacing: 0.3px;
-  font-weight: 600;
+  font-weight: 700;
   transition: color 0.15s ease;
 }
 
 .mood-option.selected .mood-circle {
   background: var(--primary-500);
   border-color: var(--primary-500);
-  transform: scale(1.08);
-  box-shadow: 0 6px 16px rgba(255, 158, 68, 0.4);
 }
 
 .mood-option.selected .mood-label { color: var(--primary-200); }
 
 .mood-option:disabled { cursor: not-allowed; opacity: 0.55; }
-.mood-option:disabled .mood-circle { transform: none; }
 
 .mood-option:focus-visible .mood-circle {
   outline: 2px solid var(--primary-200);
   outline-offset: 2px;
 }
 
-/* ---------- Pill button ---------- */
-.pill-btn {
+/* ---------- Buttons ---------- */
+.btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
   width: 100%;
-  padding: 14px 20px;
-  border-radius: 999px;
+  height: 48px;
+  padding: 0 20px;
+  border-radius: 12px;
   border: none;
   font-family: var(--font-ui);
   font-weight: 700;
   font-size: 16px;
-  letter-spacing: 0.1px;
+  line-height: 24px;
   cursor: pointer;
   touch-action: manipulation;
-  transition: opacity 0.15s ease, transform 0.1s ease;
+  transition: opacity 0.15s ease;
 }
 
-.pill-btn--primary {
+.btn--filled {
   background: var(--primary-500);
   color: var(--primary-800);
 }
 
-.pill-btn--primary:disabled {
-  background: rgba(255, 255, 255, 0.12);
-  color: rgba(255, 255, 255, 0.4);
+.btn--filled:disabled {
+  background: var(--white-10);
+  color: var(--white-40);
   cursor: not-allowed;
 }
 
-.pill-btn--primary:not(:disabled):active { transform: scale(0.98); }
-
-.pill-btn:focus-visible {
+.btn:focus-visible {
   outline: 2px solid var(--primary-200);
   outline-offset: 2px;
 }
 
 .done-note {
   margin: 14px 0 0;
-  font-size: 13px;
-  line-height: 18px;
-  color: rgba(255, 255, 255, 0.65);
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--white-60);
   text-align: center;
 }
 
 /* ---------- Reaffirming message card ---------- */
 .reaffirm-card {
-  background: linear-gradient(135deg, rgba(255, 158, 68, 0.22), rgba(255, 158, 68, 0.08));
-  border: 1px solid rgba(255, 158, 68, 0.35);
+  background: var(--white-10);
+  border: 1px solid var(--primary-500);
   animation: fadeInUp 0.4s ease;
 }
 
@@ -334,7 +479,7 @@ body {
   margin: 0;
   font-size: 16px;
   line-height: 24px;
-  color: var(--primary-50);
+  color: var(--white-100);
 }
 
 /* ---------- Grid layout ---------- */
@@ -377,7 +522,7 @@ body {
 #mood-chart { display: block; }
 
 .chart-baseline-label {
-  fill: rgba(255, 255, 255, 0.4);
+  fill: var(--white-40);
   font-size: 9px;
   font-family: var(--font-ui);
 }
@@ -388,7 +533,7 @@ body {
   margin-top: 8px;
   font-size: 11px;
   letter-spacing: 0.4px;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--white-50);
 }
 
 .chart-axis span {
@@ -401,7 +546,7 @@ body {
 .chart-empty {
   font-size: 14px;
   line-height: 20px;
-  color: rgba(255, 255, 255, 0.65);
+  color: var(--white-60);
   text-align: center;
   padding: 32px 8px;
   margin: 0;
@@ -418,7 +563,7 @@ body {
   flex: 1;
   aspect-ratio: 1;
   border-radius: 50%;
-  border: 1.5px solid rgba(255, 255, 255, 0.25);
+  border: 1.5px solid var(--white-20);
   background-color: transparent;
   background-size: cover;
   background-position: center;
@@ -446,7 +591,7 @@ body {
   margin: 0;
   font-size: 14px;
   line-height: 20px;
-  color: rgba(255, 255, 255, 0.8);
+  color: var(--white-80);
 }
 
 /* ---------- Loading state ---------- */
@@ -463,13 +608,6 @@ body {
   to { transform: rotate(360deg); }
 }
 
-@media (max-width: 420px) {
-  .headline { font-size: 24px; line-height: 30px; }
-  .mood-circle { width: 44px; height: 44px; }
-  .mood-option .emoji { font-size: 22px; }
-  .mood-option .mood-label { font-size: 10px; }
-}
-
 @media (max-width: 340px) {
   .mood-option .mood-label { display: none; }
 }
@@ -481,7 +619,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 32px 24px;
+  padding: 32px 16px;
 }
 
 .login-inner { width: 100%; max-width: 360px; }
@@ -497,23 +635,21 @@ body {
 .login-logo {
   width: 64px;
   height: 64px;
-  border-radius: 18px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  border-radius: 12px;
 }
 
 .login-wordmark {
   font-family: var(--font-ui);
-  font-size: 22px;
+  font-size: 28px;
+  line-height: 32px;
   font-weight: 700;
-  letter-spacing: 0.5px;
-  color: var(--white-100);
+  color: var(--primary-500);
 }
 
 .login-headline {
   font-family: var(--font-display);
-  font-optical-sizing: auto;
-  font-variation-settings: "SOFT" 60;
   font-weight: 600;
+  font-variation-settings: "opsz" 144, "SOFT" 100;
   font-size: 24px;
   line-height: 30px;
   text-align: center;
@@ -524,9 +660,9 @@ body {
 .login-input-row {
   display: flex;
   align-items: stretch;
-  border-radius: 16px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(0, 0, 0, 0.18);
+  border-radius: 12px;
+  border: 1px solid var(--white-20);
+  background: var(--white-10);
   overflow: hidden;
   margin-bottom: 20px;
   transition: border-color 0.15s ease;
@@ -540,15 +676,15 @@ body {
   gap: 6px;
   padding: 0 14px;
   border: none;
-  border-right: 1px solid rgba(255, 255, 255, 0.14);
+  border-right: 1px solid var(--white-20);
   background: transparent;
-  color: rgba(255, 255, 255, 0.75);
+  color: var(--white-80);
   cursor: pointer;
   touch-action: manipulation;
 }
 
 .country-flag { font-size: 18px; }
-.country-code { font-size: 14px; font-weight: 600; }
+.country-code { font-size: 14px; line-height: 20px; font-weight: 700; color: var(--white-100); }
 
 .phone-input {
   flex: 1;
@@ -562,12 +698,12 @@ body {
   outline: none;
 }
 
-.phone-input::placeholder { color: rgba(255, 255, 255, 0.4); }
+.phone-input::placeholder { color: var(--white-40); }
 
 .login-btn-wrap {
   position: relative;
   width: 100%;
-  border-radius: 999px;
+  border-radius: 12px;
   overflow: hidden;
 }
 
@@ -578,24 +714,22 @@ body {
   align-items: center;
   justify-content: center;
   width: 100%;
-  padding: 15px 20px;
-  border-radius: 999px;
+  height: 48px;
+  padding: 0 20px;
+  border-radius: 12px;
   border: none;
   background: var(--primary-500);
   color: var(--primary-800);
   font-family: var(--font-ui);
   font-weight: 700;
   font-size: 16px;
+  line-height: 24px;
   cursor: pointer;
   touch-action: manipulation;
   transition: background-color 0.2s ease, color 0.2s ease;
 }
 
 .login-btn:disabled { cursor: not-allowed; }
-
-.login-btn-wrap.loading {
-  border: 1.5px solid rgba(255, 158, 68, 0.45);
-}
 
 .login-btn-wrap.loading .login-btn {
   background: transparent;
@@ -609,30 +743,20 @@ body {
   border-radius: inherit;
   overflow: hidden;
   z-index: 0;
+  background: var(--white-10);
 }
 
 .login-progress-fill.crawling {
-  background: linear-gradient(90deg, var(--primary-500), var(--primary-200));
+  background: var(--primary-500);
   animation: login-crawl 6s ease-out forwards;
-}
-
-.login-progress-fill.crawling::after {
-  content: "";
-  position: absolute;
-  inset-block: 0;
-  width: 28%;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.5), transparent);
-  animation: login-shine 2s ease-in-out infinite;
 }
 
 .login-progress-fill.done {
   width: 100%;
-  background: linear-gradient(90deg, var(--primary-500), var(--primary-200));
+  background: var(--primary-500);
   animation: none;
   transition: width 0.35s ease;
 }
-
-.login-progress-fill.done::after { display: none; }
 
 @keyframes login-crawl {
   0% { width: 5%; }
@@ -643,15 +767,11 @@ body {
   100% { width: 76%; }
 }
 
-@keyframes login-shine {
-  0% { transform: translateX(-100%) skewX(-18deg); }
-  100% { transform: translateX(500%) skewX(-18deg); }
-}
-
 .login-error {
   min-height: 16px;
   margin: 10px 0 0;
   font-size: 12px;
+  line-height: 16px;
   color: var(--error-500);
   text-align: center;
 }
@@ -659,7 +779,8 @@ body {
 .login-hint {
   margin: 18px 0 0;
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.35);
+  line-height: 16px;
+  color: var(--white-40);
   text-align: center;
 }
 
@@ -667,7 +788,7 @@ body {
 .sheet-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: rgba(0, 0, 0, 0.75);
   z-index: 40;
 }
 
@@ -680,10 +801,11 @@ body {
   max-height: 60vh;
   display: flex;
   flex-direction: column;
-  background: #1c1230;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--bg);
+  border: 1px solid var(--white-20);
   border-bottom: none;
-  border-radius: 24px 24px 0 0;
+  border-radius: 20px 20px 0 0;
+  box-shadow: var(--shadow-overlay);
   animation: slideUp 220ms cubic-bezier(0.32, 0.72, 0, 1) both;
 }
 
@@ -702,8 +824,8 @@ body {
 .sheet-handle {
   width: 36px;
   height: 4px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.25);
+  border-radius: 4px;
+  background: var(--white-20);
 }
 
 .sheet-search-wrap { padding: 0 16px 10px; flex-shrink: 0; }
@@ -711,8 +833,8 @@ body {
 .sheet-search {
   width: 100%;
   border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--white-20);
+  background: var(--white-10);
   padding: 10px 14px;
   font-family: var(--font-ui);
   font-size: 14px;
@@ -731,7 +853,7 @@ body {
   width: 100%;
   padding: 12px 16px;
   border: none;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid var(--white-10);
   background: transparent;
   color: var(--white-100);
   text-align: left;
@@ -741,7 +863,7 @@ body {
 
 .country-option:last-child { border-bottom: none; }
 .country-option-flag { font-size: 18px; }
-.country-option-name { font-size: 14px; font-weight: 500; }
+.country-option-name { font-size: 14px; line-height: 20px; font-weight: 400; }
 
 /* ================= Tester mode modal ================= */
 .test-modal-overlay {
@@ -751,17 +873,18 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 24px;
-  background: rgba(0, 0, 0, 0.6);
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.75);
 }
 
 .test-modal {
   width: 100%;
   max-width: 380px;
-  background: #1c1230;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--bg);
+  border: 1px solid var(--white-20);
   border-radius: 20px;
   padding: 22px;
+  box-shadow: var(--shadow-overlay);
   animation: fadeInUp 0.25s ease;
 }
 
@@ -772,9 +895,17 @@ body {
   margin-bottom: 6px;
 }
 
+.test-modal-title-icon {
+  width: 18px;
+  height: 18px;
+  color: var(--primary-500);
+  flex-shrink: 0;
+}
+
 .test-modal-title h2 {
   margin: 0;
   font-size: 16px;
+  line-height: 20px;
   font-weight: 700;
   color: var(--white-100);
 }
@@ -782,7 +913,8 @@ body {
 .test-modal-subtitle {
   margin: 0 0 18px;
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.55);
+  line-height: 16px;
+  color: var(--white-60);
 }
 
 .test-modal-options {
@@ -796,20 +928,20 @@ body {
   flex-direction: column;
   gap: 3px;
   padding: 12px 14px;
-  border-radius: 14px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.05);
+  border-radius: 12px;
+  border: 1px solid var(--white-20);
+  background: var(--white-10);
   text-align: left;
   cursor: pointer;
   touch-action: manipulation;
   color: var(--white-100);
-  transition: border-color 0.15s ease, background-color 0.15s ease;
+  transition: border-color 0.15s ease;
 }
 
-.test-option:hover { border-color: var(--primary-200); background: rgba(255, 158, 68, 0.08); }
+.test-option:hover { border-color: var(--primary-200); }
 
-.test-option-label { font-size: 14px; font-weight: 700; }
-.test-option-desc { font-size: 11px; color: rgba(255, 255, 255, 0.55); }
+.test-option-label { font-size: 14px; line-height: 20px; font-weight: 700; }
+.test-option-desc { font-size: 12px; line-height: 16px; color: var(--white-60); }
 
 /* ================= Day detail modal ================= */
 .chart-point { cursor: pointer; touch-action: manipulation; }
@@ -822,19 +954,20 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 24px;
-  background: rgba(0, 0, 0, 0.6);
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.75);
 }
 
 .day-detail-modal {
   position: relative;
   width: 100%;
   max-width: 340px;
-  background: linear-gradient(135deg, rgba(255, 158, 68, 0.16), #1c1230 55%);
-  border: 1px solid rgba(255, 158, 68, 0.3);
+  background: var(--bg);
+  border: 1px solid var(--white-20);
   border-radius: 20px;
   padding: 28px 24px 24px;
   text-align: center;
+  box-shadow: var(--shadow-overlay);
   animation: fadeInUp 0.25s ease;
 }
 
@@ -846,8 +979,8 @@ body {
   height: 28px;
   border-radius: 50%;
   border: none;
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.6);
+  background: var(--white-10);
+  color: var(--white-60);
   font-size: 13px;
   cursor: pointer;
   touch-action: manipulation;
@@ -857,7 +990,8 @@ body {
 
 .day-detail-day {
   margin: 0;
-  font-size: 13px;
+  font-size: 12px;
+  line-height: 16px;
   font-weight: 700;
   letter-spacing: 0.4px;
   text-transform: uppercase;
@@ -866,8 +1000,9 @@ body {
 
 .day-detail-mood {
   margin: 4px 0 16px;
-  font-size: 18px;
-  font-weight: 600;
+  font-size: 16px;
+  line-height: 20px;
+  font-weight: 700;
   color: var(--white-100);
 }
 
@@ -875,14 +1010,14 @@ body {
   margin: 0;
   font-size: 14px;
   line-height: 21px;
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--white-80);
 }
 
 /* ================= Tester toolbar ================= */
 .tester-toolbar {
   max-width: 720px;
   margin: 0 auto;
-  padding: 10px 20px 0;
+  padding: 10px 16px 0;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -893,54 +1028,54 @@ body {
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
-  border: 1px solid rgba(255, 158, 68, 0.3);
-  background: rgba(255, 158, 68, 0.08);
+  border: 1px solid var(--primary-500);
+  background: var(--white-10);
   border-radius: 12px;
   padding: 8px 12px;
 }
 
-.tester-badge { font-size: 11px; font-weight: 700; color: var(--primary-200); }
+.tester-badge { font-size: 12px; line-height: 16px; font-weight: 700; color: var(--primary-200); }
 
 .tester-link-btn {
   border: none;
   background: transparent;
-  font-size: 11px;
-  font-weight: 600;
-  color: rgba(255, 255, 255, 0.6);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 400;
+  color: var(--white-60);
   text-decoration: underline;
   cursor: pointer;
   padding: 0;
   touch-action: manipulation;
 }
 
-.tester-sim-label { font-size: 11px; color: rgba(255, 255, 255, 0.5); }
+.tester-sim-label { font-size: 12px; color: var(--white-50); }
 
 .tester-sim-input {
   width: 52px;
-  border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  background: rgba(0, 0, 0, 0.3);
+  border-radius: 12px;
+  border: 1px solid var(--white-20);
+  background: var(--white-10);
   color: var(--white-100);
   font-size: 12px;
-  padding: 4px 6px;
+  padding: 4px 8px;
   outline: none;
 }
 
 .tester-mini-btn {
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.7);
-  font-size: 11px;
-  font-weight: 600;
+  border-radius: 12px;
+  border: 1px solid var(--white-20);
+  background: var(--white-10);
+  color: var(--white-70);
+  font-size: 12px;
+  font-weight: 700;
   padding: 4px 10px;
   cursor: pointer;
   touch-action: manipulation;
 }
 
 .tester-mini-btn--set {
-  background: rgba(255, 158, 68, 0.2);
-  border-color: rgba(255, 158, 68, 0.4);
+  border-color: var(--primary-500);
   color: var(--primary-200);
 }
 
@@ -950,7 +1085,7 @@ body {
   border: none;
   background: transparent;
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--white-40);
   text-decoration: underline;
   cursor: pointer;
   padding: 8px;

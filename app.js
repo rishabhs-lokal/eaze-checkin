@@ -14,21 +14,44 @@ const MOODS = [
   { value: 5, emoji: "😄", label: "Great" },
 ];
 
+// Manually authored copy (see eaze-checkin-reaffirmations.md) — one of the
+// five is chosen at random per mood, independent of any note text. No AI
+// involvement in generating or selecting these.
 const REAFFIRM_MESSAGES = {
-  low: [
-    "Thanks for being honest about a hard day. Naming it is already a step forward — be gentle with yourself tonight.",
-    "Rough days don't erase the good ones. You showed up here anyway, and that counts for something.",
-    "It's okay to not be okay. Your feelings are valid — take it slow, one moment at a time.",
+  Rough: [
+    "Today was heavy, and you're still here. That's not nothing — that's strength showing up quietly.",
+    "It's okay for a day to just be hard. You don't have to make sense of it tonight.",
+    "You made it through something difficult today. That deserves to be noticed, even by no one but you.",
+    "Some days ask more of us than we have to give. Showing up here, even like this, still counts.",
+    "You don't need to explain the rough days. Feeling them fully is its own kind of honesty.",
   ],
-  mid: [
-    "An okay day is still a day you showed up for yourself. That's worth noticing.",
-    "Not every day needs to be remarkable. Thanks for taking a moment to check in with how you actually feel.",
-    "Steady days matter too — they're the quiet foundation the good ones are built on.",
+  Low: [
+    "It sounds like today felt like a weight. You don't have to carry it alone or explain it away.",
+    "Low days don't erase the good ones — they just mean today needs a little more gentleness.",
+    "You noticed how you felt instead of pushing past it. That's a quiet act of self-respect.",
+    "It's alright to not be okay today. Naming it is already a way of taking care of yourself.",
+    "Some days feel dimmer, and that's real. You're still moving through it, one moment at a time.",
   ],
-  high: [
-    "Love that energy. Whatever's going right for you today, let yourself enjoy it fully.",
-    "That's a great mood to log — nice work carrying it with you today.",
-    "Good days deserve to be noticed just as much as hard ones. Glad today was one of them.",
+  Okay: [
+    "A steady, \"okay\" day is still a day you got through. That's worth acknowledging too.",
+    "Not every day needs to be remarkable. Okay is its own kind of stable ground.",
+    "You showed up for yourself today, even in an ordinary way. That consistency matters.",
+    "It's fine for today to be unremarkable. You don't need a big feeling to justify checking in.",
+    "Middle-of-the-road days build the foundation the brighter ones stand on. This one counts.",
+  ],
+  Good: [
+    "Today felt good, and you let yourself notice that. That's worth holding onto for a moment.",
+    "It's good to see you here on an easier day, not just the hard ones. That balance matters.",
+    "You gave yourself credit for a good day. That's a habit worth keeping.",
+    "A good day is a gift you can actually feel. Glad this one landed that way for you.",
+    "Noticing when things feel good is its own kind of self-awareness. Keep doing that.",
+  ],
+  Great: [
+    "Today felt great, and you took a moment to really feel that. Let it sink in fully.",
+    "It's wonderful when a day lifts you up like this. You deserve every bit of it.",
+    "Great days are worth savoring, not rushing past. Take this feeling with you into tomorrow.",
+    "You showed up on a great day too, not just to track the hard ones. That's balance.",
+    "Hold onto this feeling for a bit. Days like this are proof of what's possible.",
   ],
 };
 
@@ -48,21 +71,33 @@ const COUNTRIES = [
 ];
 
 const TEST_PHONES = ["9999999999"];
-const EAZE_LOGO_SRC = "assets/eaze-logo.png";
+const EAZE_LOGO_SRC = "assets/eaze-logo.png?v=3";
+const EAZE_LOGO_WHITE_SRC = "assets/eaze-logo-white.png?v=1";
+
+// One outline icon family: thin stroke, rounded joins, no fill — used in
+// place of decorative emoji anywhere an emoji would otherwise sit inside a
+// colored/rounded container (mood emoji stay as emoji — that's the user's
+// own selected data, not decoration).
+const ICONS = {
+  flame:
+    '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 3c1.2 2.4 3.6 3.9 3.6 7.2a3.6 3.6 0 0 1-1.2 2.7c1.8-.3 3-1.8 3-3.9 1.5 1.8 2.4 3.9 2.4 6 0 3.6-3 6-7.8 6S4.2 19.6 4.2 16c0-4.2 3-6.6 4.8-9.6.3 1.8 1.5 3 1.5 3S9 6.6 12 3Z" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  // Filled variant of the same flame — marks the streak as active, per the
+  // handbook's outline/filled pairing convention.
+  flameFilled:
+    '<svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M12 3c1.2 2.4 3.6 3.9 3.6 7.2a3.6 3.6 0 0 1-1.2 2.7c1.8-.3 3-1.8 3-3.9 1.5 1.8 2.4 3.9 2.4 6 0 3.6-3 6-7.8 6S4.2 19.6 4.2 16c0-4.2 3-6.6 4.8-9.6.3 1.8 1.5 3 1.5 3S9 6.6 12 3Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>',
+  trend:
+    '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 16l5-5 4 4 7-8" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/><path d="M15 7h4v4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  flask:
+    '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M9 3h6M10 3v5.5L5.5 17a2 2 0 0 0 1.8 3h9.4a2 2 0 0 0 1.8-3L14 8.5V3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+};
 
 function moodByValue(value) {
   return MOODS.find((m) => m.value === value) || MOODS[2];
 }
 
-function moodBucket(value) {
-  if (value <= 2) return "low";
-  if (value === 3) return "mid";
-  return "high";
-}
-
 function pickMessage(value) {
-  const bucket = REAFFIRM_MESSAGES[moodBucket(value)];
-  return bucket[Math.floor(Math.random() * bucket.length)];
+  const options = REAFFIRM_MESSAGES[moodByValue(value).label];
+  return options[Math.floor(Math.random() * options.length)];
 }
 
 function dayLabel(offsetFromToday) {
@@ -127,11 +162,19 @@ const SCENARIOS = {
   },
 };
 
+const POINTS_PER_CHECKIN = 10;
+const WEEKLY_STREAK_BONUS = 50;
+
 function scenarioState(key) {
   const s = SCENARIOS[key] || SCENARIOS.active;
   return {
     moodHistory: buildMoodHistory(s.moodValues),
     streakDays: buildStreakDays(s.streakCount),
+    // 10 points per day of the current streak — a 3-day streak is 30 points,
+    // full stop. Mood history is a separate concept (the last 7 calendar
+    // days, whether or not they're consecutive) and doesn't factor in here.
+    eazeScore: s.streakCount * POINTS_PER_CHECKIN,
+    lastBonusAwarded: false,
   };
 }
 
@@ -153,6 +196,8 @@ const state = {
   submittedToday: false,
   submitting: false,
   selectedDayIdx: null,
+  eazeScore: 0,
+  lastBonusAwarded: false,
 };
 
 (function restoreSession() {
@@ -201,6 +246,10 @@ function queryEls() {
     chartScroll: document.getElementById("chart-scroll"),
     streakDots: document.getElementById("streak-dots"),
     streakCaption: document.getElementById("streak-caption"),
+    scoreValue: document.getElementById("score-value"),
+    scoreBonusChip: document.getElementById("score-bonus-chip"),
+    scoreBarFill: document.getElementById("score-bar-fill"),
+    scoreCaption: document.getElementById("score-caption"),
   };
 }
 
@@ -211,7 +260,7 @@ function loginPage() {
       <div class="login-inner">
         <div class="login-brand">
           <img src="${EAZE_LOGO_SRC}" alt="Eaze" class="login-logo" />
-          <span class="login-wordmark">eaze</span>
+          <span class="login-wordmark">eazeapp</span>
         </div>
 
         <h1 class="login-headline">Login to get started</h1>
@@ -281,7 +330,7 @@ function testModeModal() {
   return `
     <div id="test-modal-overlay" class="test-modal-overlay">
       <div class="test-modal">
-        <div class="test-modal-title"><span>🧪</span><h2>Tester Mode</h2></div>
+        <div class="test-modal-title"><span class="test-modal-title-icon">${ICONS.flask}</span><h2>Tester Mode</h2></div>
         <p class="test-modal-subtitle">You're logged in with a test number. Choose a scenario to preview:</p>
         <div class="test-modal-options">
           ${Object.entries(SCENARIOS)
@@ -346,14 +395,28 @@ function checkinPage() {
             <h1 class="headline">How are you feeling today?</h1>
           </div>
           <div class="eaze-logo" aria-label="Eaze">
-            <img src="${EAZE_LOGO_SRC}" alt="Eaze" width="44" height="44" />
+            <img src="${EAZE_LOGO_WHITE_SRC}" alt="Eaze" width="44" height="44" />
           </div>
         </div>
-        <div class="streak-pill" id="streak-pill">
-          <span class="streak-pill-icon">🔥</span>
-          <span id="streak-pill-text"></span>
+        <div class="streak-row" id="streak-pill">
+          <span class="streak-icon">${ICONS.flameFilled}</span>
+          <span class="streak-text" id="streak-pill-text"></span>
         </div>
       </header>
+
+      <section class="card score-card" id="score-card">
+        <div class="score-header">
+          <span class="score-label"><img src="${EAZE_LOGO_WHITE_SRC}" alt="" class="score-icon" /> Eaze Score</span>
+          <span class="score-value-row">
+            <span class="score-value" id="score-value">0</span>
+            <span class="score-bonus-text" id="score-bonus-chip" hidden>+${WEEKLY_STREAK_BONUS} bonus</span>
+          </span>
+        </div>
+        <div class="score-bar-track">
+          <div class="score-bar-fill" id="score-bar-fill"></div>
+        </div>
+        <p class="score-caption" id="score-caption"></p>
+      </section>
 
       <section class="card entry-card" id="entry-card">
         <p class="entry-prompt">Pick how today felt</p>
@@ -367,12 +430,12 @@ function checkinPage() {
           rows="3"
         ></textarea>
 
-        <button class="pill-btn pill-btn--primary" id="save-btn" disabled>
+        <button class="btn btn--filled" id="save-btn" disabled>
           <span id="save-btn-label">Save</span>
         </button>
 
         <p class="done-note" id="done-note" hidden>
-          You've checked in today ✨ — come back tomorrow to keep your streak going.
+          You've checked in today — come back tomorrow to keep your streak going.
         </p>
       </section>
 
@@ -382,7 +445,7 @@ function checkinPage() {
 
       <div class="grid-two">
         <section class="card chart-card">
-          <h2 class="section-label"><span class="section-icon">📈</span>Mood Over Time</h2>
+          <h2 class="section-label"><span class="section-icon">${ICONS.trend}</span>Mood Over Time</h2>
           <div id="chart-wrap" class="chart-wrap">
             <div id="chart-scroll" class="chart-scroll">
               <svg id="mood-chart"></svg>
@@ -395,7 +458,7 @@ function checkinPage() {
         </section>
 
         <section class="card streak-card">
-          <h2 class="section-label"><span class="section-icon">🔥</span>Your Streak</h2>
+          <h2 class="section-label"><span class="section-icon">${ICONS.flame}</span>Your Streak</h2>
           <div class="streak-dots" id="streak-dots"></div>
           <p class="streak-caption" id="streak-caption"></p>
         </section>
@@ -457,7 +520,7 @@ function wireLoginEvents() {
       fill?.classList.remove("crawling");
       fill?.classList.add("done");
       const label = document.getElementById("login-btn-label");
-      if (label) label.textContent = "✓ Logged in!";
+      if (label) label.textContent = "✓ Logged in";
 
       setTimeout(() => {
         if (state.isTester) {
@@ -563,6 +626,8 @@ function wireTesterToolbar() {
     const input = document.getElementById("tester-streak-input");
     const n = Math.max(0, Math.min(6, Number(input.value) || 0));
     state.streakDays = buildStreakDays(n);
+    state.eazeScore = n * POINTS_PER_CHECKIN;
+    state.lastBonusAwarded = false;
     state.selectedMood = null;
     state.submittedToday = false;
     render();
@@ -769,16 +834,39 @@ function renderStreak() {
     els.streakDots.appendChild(dot);
   });
 
-  const caption =
-    count === 0 ? "Start a new streak today" : `${count} day${count === 1 ? "" : "s"} in a row`;
-  els.streakCaption.textContent = caption;
-  els.streakPillText.textContent = count === 0 ? "Start today" : `${count} day streak`;
+  els.streakCaption.innerHTML =
+    count === 0
+      ? "Start a new streak today"
+      : `<span class="stat-num">${count}</span> day${count === 1 ? "" : "s"} in a row`;
+  els.streakPillText.innerHTML =
+    count === 0 ? "Start today" : `<span class="stat-num">${count}</span> day streak`;
+}
+
+function renderScore() {
+  const count = currentStreakCount();
+  const pct = Math.round((Math.min(count, 7) / 7) * 100);
+  els.scoreValue.textContent = state.eazeScore;
+  els.scoreBarFill.style.width = `${pct}%`;
+  els.scoreCaption.innerHTML =
+    count >= 7
+      ? "Full week complete — weekly bonus earned"
+      : `<span class="stat-num">${count}</span>/<span class="stat-num">7</span> days checked in this week · +<span class="stat-num">${WEEKLY_STREAK_BONUS}</span> bonus at <span class="stat-num">7</span>`;
+
+  // One-shot celebration: show it for this render only, then consume the flag
+  // so it doesn't reappear on unrelated re-renders.
+  els.scoreBonusChip.hidden = !state.lastBonusAwarded;
+  if (state.lastBonusAwarded) {
+    state.lastBonusAwarded = false;
+    els.scoreBarFill.classList.add("just-bonus");
+    setTimeout(() => els.scoreBarFill.classList.remove("just-bonus"), 700);
+  }
 }
 
 function renderAll() {
   renderEntryState();
   renderChart();
   renderStreak();
+  renderScore();
 }
 
 async function handleSave() {
@@ -799,8 +887,18 @@ async function handleSave() {
   state.moodHistory = [...state.moodHistory, { value: mood, label: "Today", message }].slice(-7);
   // Fill whichever circle comes right after the current streak — filled days
   // are always contiguous starting from the leftmost circle.
+  const streakBefore = currentStreakCount();
   const todayIdx = state.streakDays.indexOf(false);
   if (todayIdx !== -1) state.streakDays[todayIdx] = true;
+  const streakAfter = currentStreakCount();
+
+  // Every check-in earns points; completing a full 7-day week on top of that
+  // earns the one-time weekly bonus, awarded exactly on the save that gets
+  // the streak from below 7 to 7.
+  state.eazeScore += POINTS_PER_CHECKIN;
+  state.lastBonusAwarded = streakBefore < 7 && streakAfter >= 7;
+  if (state.lastBonusAwarded) state.eazeScore += WEEKLY_STREAK_BONUS;
+
   state.submitting = false;
   state.submittedToday = true;
 
