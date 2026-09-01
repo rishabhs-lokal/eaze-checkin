@@ -3,8 +3,10 @@
 // Rewards app (root.innerHTML render loop, animated login button, country
 // bottom sheet, test-phone -> scenario picker, persistent tester toolbar with
 // live overrides) and reskinned with the Eaze design tokens.
-// Mockup only: no backend. Session/test-mode persist to localStorage the same
-// way the reference app does; check-in data itself stays in memory per scenario.
+// Real users hit the backend in backend/ (see "Real backend integration"
+// below) — EazeScore and check-in history persist for real. Testers stay on
+// the local scenario simulator and never touch the real API, so QA/demo data
+// can never pollute a real account.
 
 const MOODS = [
   { value: 1, emoji: "😞", label: "Rough" },
@@ -120,6 +122,14 @@ function buildStreakDays(pastCount) {
   return Array.from({ length: 7 }, (_, i) => i < n);
 }
 
+// Same shape, but for when the exact total filled count is already known
+// (restoring real data from the API) and there's no later "flip today's
+// dot" step coming — unlike buildStreakDays, doesn't reserve a slot.
+function buildFilledStreakDays(filledCount) {
+  const n = Math.max(0, Math.min(7, filledCount));
+  return Array.from({ length: 7 }, (_, i) => i < n);
+}
+
 function buildMoodHistory(seedValues) {
   // Whether there's history to show is a property of the scenario (has this
   // person ever logged a mood?), not of the current streak count — a broken
@@ -178,6 +188,94 @@ function scenarioState(key) {
   };
 }
 
+// ---------- Real backend integration ----------
+// Testers are unaffected by any of this — they stay on the local scenario
+// simulator above. Non-tester users hit the actual API so EazeScore and
+// check-in history survive a refresh instead of resetting to scripted demo
+// data every load.
+const API_BASE = "http://localhost:8000";
+
+async function apiGet(path) {
+  const res = await fetch(`${API_BASE}${path}`);
+  if (!res.ok) throw new Error(`GET ${path} failed: ${res.status}`);
+  return res.json();
+}
+
+async function apiPost(path, body) {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const errBody = await res.json().catch(() => ({}));
+    throw new Error(errBody.detail || `POST ${path} failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+// Calendar-day difference between two "YYYY-MM-DD" strings, computed in UTC
+// to match the backend's date() comparisons — avoids local-timezone drift
+// around midnight.
+function daysBetween(fromStr, toStr) {
+  const [fy, fm, fd] = fromStr.split("-").map(Number);
+  const [ty, tm, td] = toStr.split("-").map(Number);
+  return Math.round((Date.UTC(ty, tm - 1, td) - Date.UTC(fy, fm - 1, fd)) / 86400000);
+}
+
+// Maps the API's raw check-in list + score state into this app's existing
+// UI shape (moodHistory / streakDays / submittedToday / eazeScore) — same
+// shape scenarioState() produces, so rendering code doesn't need to know
+// whether the data came from a scenario or the real backend.
+function computeStateFromApi(checkIns, scoreState) {
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const sorted = [...checkIns].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+  const last7 = sorted.slice(-7);
+  const moodHistory = last7.map((c) => {
+    const entryDateStr = c.created_at.slice(0, 10);
+    const daysAgo = daysBetween(entryDateStr, todayStr);
+    return { value: c.mood, label: dayLabel(daysAgo), message: pickMessage(c.mood) };
+  });
+
+  const hasCheckedInToday =
+    sorted.length > 0 && sorted[sorted.length - 1].created_at.slice(0, 10) === todayStr;
+
+  return {
+    moodHistory,
+    // scoreState.streak already counts today when checked in (see the
+    // backend's GET /eaze-score) — it's exactly the dot count to show, no
+    // adjustment needed.
+    streakDays: buildFilledStreakDays(scoreState.streak),
+    submittedToday: hasCheckedInToday,
+    eazeScore: scoreState.earned,
+    lastBonusAwarded: false,
+  };
+}
+
+// Fire-and-forget: called right after the first render so the logged-in
+// shell shows instantly, then re-renders once real data arrives. On
+// failure, falls back to an honest zeroed state rather than fake demo
+// numbers — a real user should never see scripted data.
+async function loadRealUserData(phone) {
+  try {
+    const [scoreState, checkIns] = await Promise.all([
+      apiGet(`/eaze-score/${phone}`),
+      apiGet(`/checkins/${phone}`),
+    ]);
+    Object.assign(state, computeStateFromApi(checkIns, scoreState));
+  } catch (err) {
+    console.error("Failed to load EazeScore/check-in history", err);
+    Object.assign(state, {
+      moodHistory: [],
+      streakDays: buildStreakDays(0),
+      submittedToday: false,
+      eazeScore: 0,
+      lastBonusAwarded: false,
+    });
+  }
+  render();
+}
+
 // ---------- State ----------
 const state = {
   view: "login",
@@ -221,7 +319,9 @@ const state = {
       state.showTestModal = true;
     }
   } else {
-    Object.assign(state, scenarioState("active"));
+    // Real user: show the checkin shell immediately with a clean/zeroed
+    // state, then fetch actual persisted data below (after the initial
+    // render() at the bottom of this file) — no more scripted demo scores.
     state.view = "checkin";
   }
 })();
@@ -528,9 +628,9 @@ function wireLoginEvents() {
           state.showTestModal = true;
           render();
         } else {
-          Object.assign(state, scenarioState("active"));
           state.view = "checkin";
           render();
+          loadRealUserData(phone);
         }
       }, 350);
     }, 1100);
@@ -875,10 +975,43 @@ async function handleSave() {
   state.submitting = true;
   renderEntryState();
 
-  await new Promise((resolve) => setTimeout(resolve, 700));
-
   const mood = state.selectedMood;
   const message = pickMessage(mood);
+
+  if (!state.isTester) {
+    // Real user: persist for real, so this survives a refresh. The backend
+    // is the source of truth for score/streak — we only mirror its result
+    // into local UI state, never compute it ourselves.
+    try {
+      const note = els.textarea.value.trim() || null;
+      const result = await apiPost("/checkins", { phone: state.phone, mood, note });
+
+      state.moodHistory = [...state.moodHistory, { value: mood, label: "Today", message }].slice(-7);
+      const todayIdx = state.streakDays.indexOf(false);
+      if (todayIdx !== -1) state.streakDays[todayIdx] = true;
+
+      state.eazeScore = result.score.earned;
+      state.lastBonusAwarded = result.streak_bonus_awarded;
+      state.submitting = false;
+      state.submittedToday = true;
+
+      renderAll();
+      renderReaffirm(message);
+
+      const dot = els.streakDots.querySelector(`[data-idx="${todayIdx}"]`);
+      if (dot) dot.classList.add("just-filled");
+    } catch (err) {
+      console.error("Failed to save check-in", err);
+      state.submitting = false;
+      renderEntryState(); // re-enable Save so the user can retry
+    }
+    return;
+  }
+
+  // Tester: local-only simulation, exactly as before — testers never touch
+  // the real backend.
+  await new Promise((resolve) => setTimeout(resolve, 700));
+
   // One entry per day: today's check-in joins the history at the end (chart
   // is chronological, oldest to newest), oldest day drops off the front so
   // it always shows a fixed 7-day window, never growing unbounded. The
@@ -910,3 +1043,9 @@ async function handleSave() {
 }
 
 render();
+
+// Restored session for a real (non-tester) user: initial render above shows
+// the clean shell, this fetches their actual persisted score/history.
+if (state.view === "checkin" && !state.isTester && state.phone) {
+  loadRealUserData(state.phone);
+}

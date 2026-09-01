@@ -21,6 +21,15 @@ class Settings(BaseSettings):
     db_max_overflow: int = 5
     db_pool_timeout_seconds: int = 30
 
+    # Real coin-transfer call, gated for mock mode. Unset key -> claims are
+    # recorded as mock_success without ever calling the real API, exactly
+    # like the reference implementations this flow is modeled on.
+    eaze_coins_auth_key: str | None = None
+    eaze_coins_api_url: str = "https://api.eazeapp.com/payments/free-coins/upload/"
+
+    # Failure-only ops notification for claim/transfer errors. Unset -> no-op.
+    slack_webhook_url: str | None = None
+
     @property
     def async_database_url(self) -> str:
         url = self.database_url
