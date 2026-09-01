@@ -643,7 +643,7 @@ body {
   font-size: 28px;
   line-height: 32px;
   font-weight: 700;
-  color: var(--white-100);
+  color: var(--primary-500);
 }
 
 .login-headline {
