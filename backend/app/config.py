@@ -30,6 +30,14 @@ class Settings(BaseSettings):
     # Failure-only ops notification for claim/transfer errors. Unset -> no-op.
     slack_webhook_url: str | None = None
 
+    # The shared, cross-app EazeScore ledger (eaze-level-up's own backend).
+    # host.docker.internal is the local-dev default because this service and
+    # eaze-level-up run as two separate docker-compose projects with no
+    # shared network — that hostname is how a container reaches a port
+    # published on the host machine. Unset -> check-ins simply aren't
+    # mirrored anywhere else; this app's own scoring is unaffected either way.
+    eaze_level_up_api_url: str | None = "http://host.docker.internal:3000"
+
     @property
     def async_database_url(self) -> str:
         url = self.database_url
