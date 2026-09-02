@@ -228,6 +228,31 @@ body {
   line-height: 20px;
   font-weight: 400;
   color: var(--white-80);
+  /* Reset so this also works as a <button> on the check-in page's clickable
+     "EazeScore Daily" label — a plain <span> on the home page ignores these. */
+  border: none;
+  background: transparent;
+  padding: 0;
+  font-family: inherit;
+}
+
+.score-label-hint {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 1px solid var(--white-40);
+  color: var(--white-60);
+  font-size: 10px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+button.score-label {
+  cursor: pointer;
+  touch-action: manipulation;
 }
 
 .score-icon {
@@ -1090,4 +1115,147 @@ body {
   cursor: pointer;
   padding: 8px;
   touch-action: manipulation;
+}
+
+/* ================= EazeScore home page ================= */
+.back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0 0 14px;
+  border: none;
+  background: transparent;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 700;
+  color: var(--white-60);
+  cursor: pointer;
+  padding: 0;
+  touch-action: manipulation;
+}
+
+.welcome-bonus-banner {
+  margin: 0 0 16px;
+  padding: 12px 16px;
+  border-radius: 12px;
+  border: 1px solid var(--success-500);
+  background: var(--white-10);
+  color: var(--success-500);
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 700;
+  text-align: center;
+  animation: fadeInUp 0.4s ease;
+}
+
+.sessions-card {
+  text-align: center;
+}
+
+.sessions-label {
+  margin: 0;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--white-60);
+}
+
+.sessions-value {
+  margin: 6px 0 0;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-variation-settings: "opsz" 144, "SOFT" 100;
+  font-size: 32px;
+  line-height: 38px;
+  color: var(--white-100);
+}
+
+.sessions-caption {
+  margin: 4px 0 0;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--white-60);
+}
+
+.home-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  margin-bottom: 16px;
+  padding: 16px 18px;
+  border-radius: 16px;
+  border: 1px solid var(--primary-500);
+  background: var(--primary-500);
+  cursor: pointer;
+  touch-action: manipulation;
+  text-align: left;
+  transition: opacity 0.15s ease;
+}
+
+.home-banner:active { opacity: 0.85; }
+
+.home-banner-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.home-banner-title {
+  font-family: var(--font-ui);
+  font-size: 15px;
+  line-height: 20px;
+  font-weight: 700;
+  color: var(--primary-800);
+}
+
+.home-banner-sub {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--primary-800);
+  opacity: 0.85;
+}
+
+.home-banner-arrow {
+  width: 20px;
+  height: 20px;
+  color: var(--primary-800);
+  flex-shrink: 0;
+}
+
+/* ================= EazeScore Daily rules modal ================= */
+.rules-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.rules-list li {
+  position: relative;
+  padding-left: 16px;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--white-80);
+  /* Each rule is written short enough to fit one line at this modal's width;
+     this is a backstop for narrower devices, not the primary mechanism —
+     ellipsis beats a silent second line if it's ever this tight. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rules-list li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 8px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--primary-500);
 }

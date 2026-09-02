@@ -1,5 +1,5 @@
 import uuid
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,6 +9,10 @@ from app.models import CheckIn, EazeScoreEvent
 POINTS_PER_CHECKIN = 10
 WEEKLY_STREAK_BONUS = 50
 STREAK_TARGET = 7
+# One-time-ever, awarded the first time a user's EazeScore home page loads
+# (see app/routers/eaze_score.py) — not part of the daily_checkin/streak_bonus
+# earn rules, which stay exactly as they were.
+WELCOME_BONUS = 20
 
 
 def compute_streak(dates: set[date], as_of: date) -> int:
@@ -50,7 +54,7 @@ async def get_score_totals(db: AsyncSession, user_id: uuid.UUID) -> tuple[int, i
     earned_result = await db.execute(
         select(func.coalesce(func.sum(EazeScoreEvent.delta), 0)).where(
             EazeScoreEvent.user_id == user_id,
-            EazeScoreEvent.reason.in_(("daily_checkin", "streak_bonus")),
+            EazeScoreEvent.reason.in_(("daily_checkin", "streak_bonus", "welcome_bonus")),
         )
     )
     claimed_result = await db.execute(
@@ -60,3 +64,30 @@ async def get_score_totals(db: AsyncSession, user_id: uuid.UUID) -> tuple[int, i
         )
     )
     return int(earned_result.scalar_one()), int(claimed_result.scalar_one())
+
+
+async def get_session_count(db: AsyncSession, user_id: uuid.UUID) -> int:
+    """Number of check-in sessions the user has ever submitted — the count
+    shown on the EazeScore home page under the lifetime total."""
+    result = await db.execute(
+        select(func.count()).select_from(CheckIn).where(CheckIn.user_id == user_id)
+    )
+    return int(result.scalar_one())
+
+
+async def get_today_earned(db: AsyncSession, user_id: uuid.UUID) -> int:
+    """Sum of today's daily_checkin/streak_bonus events — "today's improvement,"
+    shown on the check-in page's EazeScore Daily card. Excludes welcome_bonus,
+    which is a one-time home-page event, not a daily one."""
+    # created_at is stored naive (UTC-implied, matching every other date
+    # comparison in this module) — build a naive boundary to match, or
+    # asyncpg rejects comparing an offset-aware value to it.
+    today_start = datetime.combine(datetime.now(timezone.utc).date(), datetime.min.time())
+    result = await db.execute(
+        select(func.coalesce(func.sum(EazeScoreEvent.delta), 0)).where(
+            EazeScoreEvent.user_id == user_id,
+            EazeScoreEvent.reason.in_(("daily_checkin", "streak_bonus")),
+            EazeScoreEvent.created_at >= today_start,
+        )
+    )
+    return int(result.scalar_one())

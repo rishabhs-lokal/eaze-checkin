@@ -91,6 +91,8 @@ const ICONS = {
     '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 16l5-5 4 4 7-8" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/><path d="M15 7h4v4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>',
   flask:
     '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M9 3h6M10 3v5.5L5.5 17a2 2 0 0 0 1.8 3h9.4a2 2 0 0 0 1.8-3L14 8.5V3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  backArrow:
+    '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" width="14" height="14" style="vertical-align:-2px"><path d="M15 6l-6 6 6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
 };
 
 function moodByValue(value) {
@@ -249,7 +251,37 @@ function computeStateFromApi(checkIns, scoreState) {
     submittedToday: hasCheckedInToday,
     eazeScore: scoreState.earned,
     lastBonusAwarded: false,
+    sessionsCount: scoreState.sessions_count,
+    todayEarned: scoreState.today_earned,
   };
+}
+
+// EazeScore home page (real users) — lighter than loadRealUserData: only
+// needs the score/streak/session totals, not the full mood history. Calling
+// this is also what triggers the one-time welcome bonus server-side (see
+// GET /eaze-score/{phone}) — safe to call every time the home page loads,
+// since the backend only ever pays it out once per user.
+async function loadHomeData(phone) {
+  try {
+    const scoreState = await apiGet(`/eaze-score/${phone}`);
+    Object.assign(state, {
+      eazeScore: scoreState.earned,
+      streakDays: buildFilledStreakDays(scoreState.streak),
+      sessionsCount: scoreState.sessions_count,
+      todayEarned: scoreState.today_earned,
+      welcomeBonusJustAwarded: scoreState.welcome_bonus_awarded_now,
+    });
+  } catch (err) {
+    console.error("Failed to load EazeScore home data", err);
+    Object.assign(state, {
+      eazeScore: 0,
+      streakDays: buildStreakDays(0),
+      sessionsCount: 0,
+      todayEarned: 0,
+      welcomeBonusJustAwarded: false,
+    });
+  }
+  render();
 }
 
 // Fire-and-forget: called right after the first render so the logged-in
@@ -296,6 +328,12 @@ const state = {
   selectedDayIdx: null,
   eazeScore: 0,
   lastBonusAwarded: false,
+
+  // Lifetime-score home page (login -> home -> checkin).
+  sessionsCount: 0,
+  todayEarned: 0,
+  welcomeBonusJustAwarded: false,
+  showRulesModal: false,
 };
 
 (function restoreSession() {
@@ -319,10 +357,11 @@ const state = {
       state.showTestModal = true;
     }
   } else {
-    // Real user: show the checkin shell immediately with a clean/zeroed
-    // state, then fetch actual persisted data below (after the initial
-    // render() at the bottom of this file) — no more scripted demo scores.
-    state.view = "checkin";
+    // Real user: land on the EazeScore home page every time, same as right
+    // after login — show the clean/zeroed shell immediately, then fetch
+    // actual persisted data below (after the initial render() at the bottom
+    // of this file). No more scripted demo scores.
+    state.view = "home";
   }
 })();
 
@@ -350,6 +389,7 @@ function queryEls() {
     scoreBonusChip: document.getElementById("score-bonus-chip"),
     scoreBarFill: document.getElementById("score-bar-fill"),
     scoreCaption: document.getElementById("score-caption"),
+    sessionsValue: document.getElementById("sessions-value"),
   };
 }
 
@@ -465,6 +505,24 @@ function dayDetailModal() {
   `;
 }
 
+function rulesModal() {
+  return `
+    <div id="rules-overlay" class="day-detail-overlay">
+      <div class="day-detail-modal rules-modal">
+        <button id="rules-close" class="day-detail-close" type="button" aria-label="Close">✕</button>
+        <p class="day-detail-day">EazeScore Daily</p>
+        <p class="day-detail-mood">How today's score works</p>
+        <ul class="rules-list">
+          <li>Check in daily to earn 10 points.</li>
+          <li>A 7-day streak earns a 50-point bonus.</li>
+          <li>A missed day resets streak, not score.</li>
+          <li>Every point adds to your EazeScore.</li>
+        </ul>
+      </div>
+    </div>
+  `;
+}
+
 function testerToolbar() {
   const scenario = SCENARIOS[state.testMode] || SCENARIOS.active;
   return `
@@ -484,10 +542,66 @@ function testerToolbar() {
   `;
 }
 
+function homePage() {
+  return `
+    ${state.isTester ? testerToolbar() : ""}
+    <main class="container">
+      <header class="page-header">
+        <div class="header-row">
+          <div>
+            <p class="eyebrow">EazeScore</p>
+            <h1 class="headline">Your lifetime EazeScore</h1>
+          </div>
+          <div class="eaze-logo" aria-label="Eaze">
+            <img src="${EAZE_LOGO_WHITE_SRC}" alt="Eaze" width="44" height="44" />
+          </div>
+        </div>
+      </header>
+
+      ${
+        state.welcomeBonusJustAwarded
+          ? `<p class="welcome-bonus-banner" id="welcome-bonus-banner">Welcome bonus — +20 added to your EazeScore</p>`
+          : ""
+      }
+
+      <section class="card score-card" id="score-card">
+        <div class="score-header">
+          <span class="score-label"><img src="${EAZE_LOGO_WHITE_SRC}" alt="" class="score-icon" /> EazeScore</span>
+          <span class="score-value-row">
+            <span class="score-value" id="score-value">0</span>
+            <span class="score-bonus-text" id="score-bonus-chip" hidden>+${WEEKLY_STREAK_BONUS} bonus</span>
+          </span>
+        </div>
+        <div class="score-bar-track">
+          <div class="score-bar-fill" id="score-bar-fill"></div>
+        </div>
+        <p class="score-caption" id="score-caption"></p>
+      </section>
+
+      <section class="card sessions-card">
+        <p class="sessions-label">Sessions completed</p>
+        <p class="sessions-value" id="sessions-value">${state.sessionsCount}</p>
+        <p class="sessions-caption">Check-ins that built this score</p>
+      </section>
+
+      <button class="home-banner" id="checkin-banner-btn" type="button">
+        <span class="home-banner-text">
+          <span class="home-banner-title">Ready for today's check-in?</span>
+          <span class="home-banner-sub">Check in now to keep your streak going</span>
+        </span>
+        <svg class="home-banner-arrow" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+
+      ${!state.isTester ? `<button id="logout-btn" class="logout-link" type="button">Log out</button>` : ""}
+    </main>
+  `;
+}
+
 function checkinPage() {
   return `
     ${state.isTester ? testerToolbar() : ""}
     <main class="container">
+      <button id="back-to-home-btn" class="back-link" type="button">${ICONS.backArrow} EazeScore</button>
       <header class="page-header">
         <div class="header-row">
           <div>
@@ -506,7 +620,10 @@ function checkinPage() {
 
       <section class="card score-card" id="score-card">
         <div class="score-header">
-          <span class="score-label"><img src="${EAZE_LOGO_WHITE_SRC}" alt="" class="score-icon" /> Eaze Score</span>
+          <button class="score-label" id="daily-rules-btn" type="button" aria-haspopup="dialog">
+            <img src="${EAZE_LOGO_WHITE_SRC}" alt="" class="score-icon" /> EazeScore Daily
+            <span class="score-label-hint" aria-hidden="true">?</span>
+          </button>
           <span class="score-value-row">
             <span class="score-value" id="score-value">0</span>
             <span class="score-bonus-text" id="score-bonus-chip" hidden>+${WEEKLY_STREAK_BONUS} bonus</span>
@@ -576,16 +693,25 @@ function render() {
     wireLoginEvents();
     if (state.showCountrySheet) wireCountrySheetEvents();
     if (state.showTestModal) wireTestModal();
+  } else if (state.view === "home") {
+    root.innerHTML = homePage() + (state.showTestModal ? testModeModal() : "");
+    queryEls();
+    wireHomeEvents();
+    if (state.isTester) wireTesterToolbar();
+    if (state.showTestModal) wireTestModal();
+    renderHome();
   } else {
     root.innerHTML =
       checkinPage() +
       (state.showTestModal ? testModeModal() : "") +
-      (state.selectedDayIdx !== null ? dayDetailModal() : "");
+      (state.selectedDayIdx !== null ? dayDetailModal() : "") +
+      (state.showRulesModal ? rulesModal() : "");
     queryEls();
     wireCheckinEvents();
     if (state.isTester) wireTesterToolbar();
     if (state.showTestModal) wireTestModal();
     if (state.selectedDayIdx !== null) wireDayDetailModal();
+    if (state.showRulesModal) wireRulesModal();
     renderAll();
   }
 }
@@ -622,15 +748,23 @@ function wireLoginEvents() {
       const label = document.getElementById("login-btn-label");
       if (label) label.textContent = "✓ Logged in";
 
-      setTimeout(() => {
+      setTimeout(async () => {
         if (state.isTester) {
           state.testMode = null;
           state.showTestModal = true;
           render();
         } else {
-          state.view = "checkin";
+          // Resolves/creates the user row up front (see app/routers/auth.py)
+          // so the home page's first GET /eaze-score call below always finds
+          // a real user and can award the welcome bonus correctly.
+          try {
+            await apiPost("/auth/login", { phone });
+          } catch (err) {
+            console.error("Login call failed", err);
+          }
+          state.view = "home";
           render();
-          loadRealUserData(phone);
+          loadHomeData(phone);
         }
       }, 350);
     }, 1100);
@@ -708,7 +842,15 @@ function wireTestModal() {
       Object.assign(state, scenarioState(key));
       state.selectedMood = null;
       state.submittedToday = false;
-      state.view = "checkin";
+      // Simulated home-page fields — testers never hit the real backend, so
+      // these are derived locally instead of coming from GET /eaze-score.
+      // "Fresh Start" doubles as the demo for a first-ever login: the
+      // welcome bonus fires once, same as it would for a real new user.
+      state.sessionsCount = state.moodHistory.length;
+      state.todayEarned = 0;
+      state.welcomeBonusJustAwarded = key === "fresh";
+      if (state.welcomeBonusJustAwarded) state.eazeScore += 20;
+      state.view = "home";
       render();
     });
   });
@@ -728,6 +870,7 @@ function wireTesterToolbar() {
     state.streakDays = buildStreakDays(n);
     state.eazeScore = n * POINTS_PER_CHECKIN;
     state.lastBonusAwarded = false;
+    state.todayEarned = 0;
     state.selectedMood = null;
     state.submittedToday = false;
     render();
@@ -735,6 +878,8 @@ function wireTesterToolbar() {
 
   document.getElementById("tester-sim-reset")?.addEventListener("click", () => {
     Object.assign(state, scenarioState(state.testMode || "active"));
+    state.sessionsCount = state.moodHistory.length;
+    state.todayEarned = 0;
     state.selectedMood = null;
     state.submittedToday = false;
     render();
@@ -753,6 +898,10 @@ function logout() {
   state.showCountrySheet = false;
   state.selectedMood = null;
   state.submittedToday = false;
+  state.sessionsCount = 0;
+  state.todayEarned = 0;
+  state.welcomeBonusJustAwarded = false;
+  state.showRulesModal = false;
   Object.assign(state, scenarioState("active"));
   render();
 }
@@ -762,10 +911,49 @@ function wireCheckinEvents() {
   els.saveBtn?.addEventListener("click", handleSave);
   document.getElementById("logout-btn")?.addEventListener("click", logout);
 
+  document.getElementById("back-to-home-btn")?.addEventListener("click", () => {
+    state.view = "home";
+    render();
+    if (!state.isTester && state.phone) loadHomeData(state.phone);
+  });
+
+  document.getElementById("daily-rules-btn")?.addEventListener("click", () => {
+    state.showRulesModal = true;
+    render();
+  });
+
   els.chart?.addEventListener("click", (e) => {
     const hit = e.target.closest("[data-idx]");
     if (!hit) return;
     state.selectedDayIdx = Number(hit.dataset.idx);
+    render();
+  });
+}
+
+// ---------- Home page wiring ----------
+function wireHomeEvents() {
+  document.getElementById("logout-btn")?.addEventListener("click", logout);
+
+  document.getElementById("checkin-banner-btn")?.addEventListener("click", () => {
+    state.view = "checkin";
+    // Only clear the transient mood pick — submittedToday/streakDays reflect
+    // real (or tester-simulated) state and must not be force-reset here, or
+    // they'd desync from what's actually true until the fetch below lands.
+    state.selectedMood = null;
+    render();
+    if (!state.isTester && state.phone) loadRealUserData(state.phone);
+  });
+}
+
+// ---------- Rules modal wiring ----------
+function wireRulesModal() {
+  document.getElementById("rules-overlay")?.addEventListener("click", (e) => {
+    if (e.target.id !== "rules-overlay") return;
+    state.showRulesModal = false;
+    render();
+  });
+  document.getElementById("rules-close")?.addEventListener("click", () => {
+    state.showRulesModal = false;
     render();
   });
 }
@@ -942,7 +1130,11 @@ function renderStreak() {
     count === 0 ? "Start today" : `<span class="stat-num">${count}</span> day streak`;
 }
 
-function renderScore() {
+// Home page's "cumulative EazeScore" card — the lifetime total, with the
+// bar showing progress toward the next 7-day streak bonus. Unchanged from
+// the score bar/caption logic this app always had; it just lives on the
+// home page now instead of the check-in page.
+function renderCumulativeScore() {
   const count = currentStreakCount();
   const pct = Math.round((Math.min(count, 7) / 7) * 100);
   els.scoreValue.textContent = state.eazeScore;
@@ -962,11 +1154,41 @@ function renderScore() {
   }
 }
 
+// Check-in page's "EazeScore Daily" card — today's contribution only (0
+// before saving, 10 normally, 60 on a bonus day), so it reads as "what did
+// I just earn" rather than duplicating the lifetime total shown on home.
+// Bar fill is today's amount out of the max a single day can award (10 base
+// + 50 bonus), so a bonus day visibly fills the bar all the way.
+const MAX_DAILY_SCORE = POINTS_PER_CHECKIN + WEEKLY_STREAK_BONUS;
+
+function renderDailyScore() {
+  const pct = Math.round((Math.min(state.todayEarned, MAX_DAILY_SCORE) / MAX_DAILY_SCORE) * 100);
+  els.scoreValue.textContent = state.todayEarned;
+  els.scoreBarFill.style.width = `${pct}%`;
+  els.scoreCaption.textContent = !state.submittedToday
+    ? "Check in today to add to your EazeScore"
+    : state.lastBonusAwarded || state.todayEarned >= MAX_DAILY_SCORE
+    ? `+${state.todayEarned} added — includes today's streak bonus`
+    : `+${state.todayEarned} added to your EazeScore`;
+
+  els.scoreBonusChip.hidden = !state.lastBonusAwarded;
+  if (state.lastBonusAwarded) {
+    state.lastBonusAwarded = false;
+    els.scoreBarFill.classList.add("just-bonus");
+    setTimeout(() => els.scoreBarFill.classList.remove("just-bonus"), 700);
+  }
+}
+
 function renderAll() {
   renderEntryState();
   renderChart();
   renderStreak();
-  renderScore();
+  renderDailyScore();
+}
+
+function renderHome() {
+  renderCumulativeScore();
+  if (els.sessionsValue) els.sessionsValue.textContent = state.sessionsCount;
 }
 
 async function handleSave() {
@@ -991,6 +1213,8 @@ async function handleSave() {
       if (todayIdx !== -1) state.streakDays[todayIdx] = true;
 
       state.eazeScore = result.score.earned;
+      state.todayEarned = result.score.today_earned;
+      state.sessionsCount = result.score.sessions_count;
       state.lastBonusAwarded = result.streak_bonus_awarded;
       state.submitting = false;
       state.submittedToday = true;
@@ -1030,7 +1254,9 @@ async function handleSave() {
   // the streak from below 7 to 7.
   state.eazeScore += POINTS_PER_CHECKIN;
   state.lastBonusAwarded = streakBefore < 7 && streakAfter >= 7;
+  state.todayEarned = POINTS_PER_CHECKIN + (state.lastBonusAwarded ? WEEKLY_STREAK_BONUS : 0);
   if (state.lastBonusAwarded) state.eazeScore += WEEKLY_STREAK_BONUS;
+  state.sessionsCount += 1;
 
   state.submitting = false;
   state.submittedToday = true;
@@ -1046,6 +1272,6 @@ render();
 
 // Restored session for a real (non-tester) user: initial render above shows
 // the clean shell, this fetches their actual persisted score/history.
-if (state.view === "checkin" && !state.isTester && state.phone) {
-  loadRealUserData(state.phone);
+if (state.view === "home" && !state.isTester && state.phone) {
+  loadHomeData(state.phone);
 }

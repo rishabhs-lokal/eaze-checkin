@@ -41,10 +41,17 @@ async def create_check_in(payload: CheckInCreate, db: AsyncSession = Depends(get
     await db.refresh(check_in)
 
     earned, claimed = await eaze_score.get_score_totals(db, user.id)
+    sessions_count = await eaze_score.get_session_count(db, user.id)
+    today_earned = await eaze_score.get_today_earned(db, user.id)
     return CheckInResult(
         check_in=CheckInRead.model_validate(check_in),
         score=EazeScoreState(
-            earned=earned, claimed=claimed, available=earned - claimed, streak=streak_after
+            earned=earned,
+            claimed=claimed,
+            available=earned - claimed,
+            streak=streak_after,
+            sessions_count=sessions_count,
+            today_earned=today_earned,
         ),
         streak_bonus_awarded=bonus_awarded,
     )

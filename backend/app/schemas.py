@@ -9,7 +9,15 @@ class UserRead(BaseModel):
 
     id: uuid.UUID
     phone: str
+    eaze_user_id: str | None
     created_at: datetime
+
+
+class LoginRequest(BaseModel):
+    phone: str = Field(min_length=1, max_length=20)
+    # Supplied directly by the banner/host app — never looked up. See
+    # app/routers/auth.py for why no external lookup is involved.
+    eaze_user_id: str | None = Field(default=None, max_length=100)
 
 
 class CheckInCreate(BaseModel):
@@ -33,6 +41,9 @@ class EazeScoreState(BaseModel):
     claimed: int
     available: int
     streak: int
+    sessions_count: int = 0
+    today_earned: int = 0
+    welcome_bonus_awarded_now: bool = False
 
 
 class CheckInResult(BaseModel):

@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, ForeignKey, Index, String, Text, func
+from sqlalchemy import Boolean, CheckConstraint, ForeignKey, Index, String, Text, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -18,6 +18,12 @@ class User(Base):
     # real coin-transfer API, which is keyed by this id, not phone.
     eaze_user_id: Mapped[str | None] = mapped_column(String(100), unique=True, nullable=True)
     display_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # One-time-ever flag, same pattern as a permanent eligibility snapshot —
+    # set the instant the bonus is awarded, never re-derived, so it can never
+    # be paid out twice regardless of how many times the home page is loaded.
+    welcome_bonus_awarded: Mapped[bool] = mapped_column(
+        Boolean, server_default="false", nullable=False
+    )
     created_at: Mapped[datetime] = mapped_column(server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         server_default=func.now(), onupdate=func.now(), nullable=False
@@ -57,7 +63,8 @@ class EazeScoreEvent(Base):
     __tablename__ = "eaze_score_events"
     __table_args__ = (
         CheckConstraint(
-            "reason IN ('daily_checkin', 'streak_bonus', 'claim')", name="ck_score_events_reason"
+            "reason IN ('daily_checkin', 'streak_bonus', 'claim', 'welcome_bonus')",
+            name="ck_score_events_reason",
         ),
         Index("ix_score_events_user_id_created_at", "user_id", "created_at"),
     )
@@ -78,7 +85,7 @@ class CoinClaim(Base):
     __tablename__ = "coin_claims"
     __table_args__ = (
         CheckConstraint(
-            "status IN ('submitted', 'success', 'mock_success', 'failed_provider')",
+            "status IN ('submitted', 'success', 'mock_success', 'failed_provider', 'identity_unresolved')",
             name="ck_coin_claims_status",
         ),
         Index("ix_coin_claims_user_id_created_at", "user_id", "created_at"),

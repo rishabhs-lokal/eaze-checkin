@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
 from app.db import engine
-from app.routers import checkins, eaze_score, health
+from app.routers import auth, checkins, eaze_score, health
 
 settings = get_settings()
 logging.basicConfig(level=settings.log_level.upper())
@@ -22,6 +22,7 @@ app.add_middleware(
 )
 
 app.include_router(health.router)
+app.include_router(auth.router)
 app.include_router(checkins.router)
 app.include_router(eaze_score.router)
 
