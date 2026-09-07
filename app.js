@@ -106,10 +106,88 @@ function pickMessage(value) {
 
 function dayLabel(offsetFromToday) {
   if (offsetFromToday === 0) return "Today";
-  if (offsetFromToday === 1) return "Yday";
   const d = new Date();
   d.setDate(d.getDate() - offsetFromToday);
   return d.toLocaleDateString(undefined, { weekday: "short" });
+}
+
+// Backend timestamps are stored and serialized as naive UTC (no trailing
+// "Z") — without adding it back, `new Date(...)` would silently reinterpret
+// them as local time instead of UTC, throwing off every hour-based bucket
+// below by the browser's UTC offset.
+function parseUtc(isoStr) {
+  if (!isoStr) return null;
+  return new Date(/[Z]|[+-]\d\d:\d\d$/.test(isoStr) ? isoStr : `${isoStr}Z`);
+}
+
+// Multiple check-ins a day are bucketed by local time of day rather than by
+// weekday — that's the axis a same-day chart actually needs.
+function timeOfDayLabel(dateObj) {
+  const h = dateObj.getHours();
+  if (h >= 5 && h < 12) return "Morning";
+  if (h >= 12 && h < 17) return "Afternoon";
+  if (h >= 17 && h < 21) return "Evening";
+  return "Night";
+}
+
+function shortDateLabel(dateObj) {
+  const now = new Date();
+  const isToday = dateObj.toDateString() === now.toDateString();
+  if (isToday) return "Today";
+  return dateObj.toLocaleDateString(undefined, { weekday: "long" });
+}
+
+function formatClockTime(dateObj) {
+  return dateObj.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+}
+
+// "YYYY-MM-DD" in LOCAL time — the grouping key for the day-level chart view.
+// Deliberately not UTC: a 11pm check-in and a 1am check-in the same local
+// night should land in different day groups exactly the way the user
+// experienced them, which UTC slicing would get wrong near midnight.
+function localDateKey(dateObj) {
+  const y = dateObj.getFullYear();
+  const m = String(dateObj.getMonth() + 1).padStart(2, "0");
+  const d = String(dateObj.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function daysAgoFromKey(dateKey) {
+  const [y, m, d] = dateKey.split("-").map(Number);
+  const target = new Date(y, m - 1, d);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  target.setHours(0, 0, 0, 0);
+  return Math.round((today - target) / 86400000);
+}
+
+// How many recent days the multi-day overview shows — a week, matching the
+// streak row's own 7-day window.
+const OVERVIEW_DAYS_WINDOW = 7;
+
+// One point per calendar day (averaged, so a 3-check-in day still reads as a
+// single trend point) — the top level of the Health-app-style drill-down.
+function groupEntriesByDay(entries) {
+  const map = new Map();
+  entries.forEach((e) => {
+    const key = localDateKey(e.at);
+    if (!map.has(key)) map.set(key, []);
+    map.get(key).push(e);
+  });
+  const days = [...map.entries()]
+    .map(([dateKey, dayEntries]) => ({
+      dateKey,
+      avgValue: dayEntries.reduce((sum, e) => sum + e.value, 0) / dayEntries.length,
+      count: dayEntries.length,
+    }))
+    .sort((a, b) => (a.dateKey < b.dateKey ? -1 : 1));
+  return days.slice(-OVERVIEW_DAYS_WINDOW);
+}
+
+// Every check-in on one specific day, oldest to newest — the drill-down
+// level, showing each individual mood the user logged that day.
+function entriesForDay(entries, dateKey) {
+  return entries.filter((e) => localDateKey(e.at) === dateKey).sort((a, b) => a.at - b.at);
 }
 
 // ---------- Tester scenarios ----------
@@ -132,19 +210,27 @@ function buildFilledStreakDays(filledCount) {
   return Array.from({ length: 7 }, (_, i) => i < n);
 }
 
-function buildMoodHistory(seedValues) {
+// Spreads the scenario's 7 seed values across the last 4 calendar days (2-2-1-2
+// entries), at varied times of day, so testers see the same two-level chart a
+// real multiple-check-ins-a-day user would: a multi-day overview, and a
+// same-day drill-down with several time-of-day points.
+const SEED_DAY_OFFSETS = [3, 3, 2, 2, 1, 0, 0];
+const SEED_HOURS = [9, 19, 10, 20, 14, 8, 20];
+
+function buildCheckInEntries(seedValues) {
   // Whether there's history to show is a property of the scenario (has this
   // person ever logged a mood?), not of the current streak count — a broken
   // streak still has a past, it just isn't consecutive up to today.
   if (!seedValues || !seedValues.length) return [];
-  const n = 7;
-  // Chronological order — index 0 = oldest, last index = most recent. The
-  // chart reads left-to-right like a normal timeline; the streak row is a
-  // separate component and keeps its own today-on-the-left orientation.
-  return Array.from({ length: n }, (_, i) => {
-    const value = seedValues[i % seedValues.length];
-    return { value, label: dayLabel(n - i), message: pickMessage(value) };
-  });
+  const now = new Date();
+  return seedValues
+    .map((value, i) => {
+      const at = new Date(now);
+      at.setDate(at.getDate() - SEED_DAY_OFFSETS[i % SEED_DAY_OFFSETS.length]);
+      at.setHours(SEED_HOURS[i % SEED_HOURS.length], 0, 0, 0);
+      return { value, at, message: pickMessage(value) };
+    })
+    .sort((a, b) => a.at - b.at);
 }
 
 const SCENARIOS = {
@@ -179,14 +265,21 @@ const WEEKLY_STREAK_BONUS = 50;
 
 function scenarioState(key) {
   const s = SCENARIOS[key] || SCENARIOS.active;
+  const checkInEntries = buildCheckInEntries(s.moodValues);
+  const days = groupEntriesByDay(checkInEntries);
   return {
-    moodHistory: buildMoodHistory(s.moodValues),
+    checkInEntries,
     streakDays: buildStreakDays(s.streakCount),
     // 10 points per day of the current streak — a 3-day streak is 30 points,
     // full stop. Mood history is a separate concept (the last 7 calendar
     // days, whether or not they're consecutive) and doesn't factor in here.
     eazeScore: s.streakCount * POINTS_PER_CHECKIN,
     lastBonusAwarded: false,
+    // One day of history or less -> skip straight to the drill-down view (a
+    // single-dot "overview" isn't useful); several days -> start at the
+    // Health-app-style multi-day overview.
+    chartView: days.length <= 1 ? "day" : "overview",
+    chartSelectedDate: days.length ? days[days.length - 1].dateKey : null,
   };
 }
 
@@ -216,44 +309,54 @@ async function apiPost(path, body) {
   return res.json();
 }
 
-// Calendar-day difference between two "YYYY-MM-DD" strings, computed in UTC
-// to match the backend's date() comparisons — avoids local-timezone drift
-// around midnight.
-function daysBetween(fromStr, toStr) {
-  const [fy, fm, fd] = fromStr.split("-").map(Number);
-  const [ty, tm, td] = toStr.split("-").map(Number);
-  return Math.round((Date.UTC(ty, tm - 1, td) - Date.UTC(fy, fm - 1, fd)) / 86400000);
-}
+// Safety cap on how many raw check-ins stay in memory — generous relative to
+// what the 7-day overview + drill-down actually need, just guards against
+// unbounded growth for a very long-term, very frequent user.
+const RAW_ENTRIES_CAP = 90;
 
 // Maps the API's raw check-in list + score state into this app's existing
-// UI shape (moodHistory / streakDays / submittedToday / eazeScore) — same
-// shape scenarioState() produces, so rendering code doesn't need to know
-// whether the data came from a scenario or the real backend.
+// UI shape (checkInEntries / streakDays / checkedInToday / nextCheckinAt /
+// eazeScore) — same shape scenarioState() produces, so rendering code
+// doesn't need to know whether the data came from a scenario or the real
+// backend. Does NOT set chartView/chartSelectedDate — callers decide whether
+// to compute a fresh default or preserve whatever the user is browsing (see
+// ensureChartViewDefault).
 function computeStateFromApi(checkIns, scoreState) {
-  const todayStr = new Date().toISOString().slice(0, 10);
-  const sorted = [...checkIns].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
-  const last7 = sorted.slice(-7);
-  const moodHistory = last7.map((c) => {
-    const entryDateStr = c.created_at.slice(0, 10);
-    const daysAgo = daysBetween(entryDateStr, todayStr);
-    return { value: c.mood, label: dayLabel(daysAgo), message: pickMessage(c.mood) };
-  });
-
-  const hasCheckedInToday =
-    sorted.length > 0 && sorted[sorted.length - 1].created_at.slice(0, 10) === todayStr;
+  const checkInEntries = [...checkIns]
+    .map((c) => ({ value: c.mood, at: parseUtc(c.created_at), message: pickMessage(c.mood) }))
+    .sort((a, b) => a.at - b.at)
+    .slice(-RAW_ENTRIES_CAP);
 
   return {
-    moodHistory,
+    checkInEntries,
     // scoreState.streak already counts today when checked in (see the
     // backend's GET /eaze-score) — it's exactly the dot count to show, no
     // adjustment needed.
     streakDays: buildFilledStreakDays(scoreState.streak),
-    submittedToday: hasCheckedInToday,
+    checkedInToday: scoreState.checked_in_today,
+    nextCheckinAt: scoreState.next_checkin_at,
     eazeScore: scoreState.earned,
     lastBonusAwarded: false,
     sessionsCount: scoreState.sessions_count,
     todayEarned: scoreState.today_earned,
   };
+}
+
+// Picks the chart's starting view exactly once per session (first successful
+// load) — a single day of history goes straight to the drill-down, several
+// days start at the multi-day overview. Later re-fetches (after a save, a
+// tab revisit) leave chartView alone so a user drilled into a day doesn't
+// get yanked back to the overview underneath them.
+function ensureChartViewDefault() {
+  if (state.chartView) return;
+  const days = groupEntriesByDay(state.checkInEntries);
+  if (days.length <= 1) {
+    state.chartView = "day";
+    state.chartSelectedDate = days.length ? days[days.length - 1].dateKey : null;
+  } else {
+    state.chartView = "overview";
+    state.chartSelectedDate = null;
+  }
 }
 
 // EazeScore home page (real users) — lighter than loadRealUserData: only
@@ -270,6 +373,8 @@ async function loadHomeData(phone) {
       sessionsCount: scoreState.sessions_count,
       todayEarned: scoreState.today_earned,
       welcomeBonusJustAwarded: scoreState.welcome_bonus_awarded_now,
+      checkedInToday: scoreState.checked_in_today,
+      nextCheckinAt: scoreState.next_checkin_at,
     });
   } catch (err) {
     console.error("Failed to load EazeScore home data", err);
@@ -279,6 +384,8 @@ async function loadHomeData(phone) {
       sessionsCount: 0,
       todayEarned: 0,
       welcomeBonusJustAwarded: false,
+      checkedInToday: false,
+      nextCheckinAt: null,
     });
   }
   render();
@@ -295,12 +402,14 @@ async function loadRealUserData(phone) {
       apiGet(`/checkins/${phone}`),
     ]);
     Object.assign(state, computeStateFromApi(checkIns, scoreState));
+    ensureChartViewDefault();
   } catch (err) {
     console.error("Failed to load EazeScore/check-in history", err);
     Object.assign(state, {
-      moodHistory: [],
+      checkInEntries: [],
       streakDays: buildStreakDays(0),
-      submittedToday: false,
+      checkedInToday: false,
+      nextCheckinAt: null,
       eazeScore: 0,
       lastBonusAwarded: false,
     });
@@ -320,12 +429,29 @@ const state = {
   testMode: null,
   showTestModal: false,
 
-  moodHistory: [],
+  // Raw check-in entries ({ value, at: Date, message }), oldest to newest —
+  // the single source both chart views (multi-day overview and single-day
+  // drill-down) derive from.
+  checkInEntries: [],
+  // 'overview' (one averaged point per day) or 'day' (every entry on one
+  // specific day) — see ensureChartViewDefault for how the initial value is
+  // chosen. Null until the first real fetch (or tester scenario) resolves.
+  chartView: null,
+  // Date key ("YYYY-MM-DD", local) the 'day' view is currently drilled into.
+  chartSelectedDate: null,
+  // Index into that day's entries (from entriesForDay) for the open
+  // individual-entry modal, or null when it's closed.
+  selectedEntryIdx: null,
   streakDays: buildStreakDays(0),
   selectedMood: null,
-  submittedToday: false,
+  // Whether today already has a check-in (drives the streak dot) — separate
+  // from the cooldown below, since a user can be checked in for today and
+  // still be waiting on their next 3-hour window.
+  checkedInToday: false,
+  // ISO timestamp (UTC) of when the next check-in becomes eligible for
+  // points, or null if one can be submitted right now.
+  nextCheckinAt: null,
   submitting: false,
-  selectedDayIdx: null,
   eazeScore: 0,
   lastBonusAwarded: false,
 
@@ -375,6 +501,7 @@ function queryEls() {
     saveBtn: document.getElementById("save-btn"),
     saveBtnLabel: document.getElementById("save-btn-label"),
     doneNote: document.getElementById("done-note"),
+    noteCounter: document.getElementById("note-counter"),
     reaffirmCard: document.getElementById("reaffirm-card"),
     reaffirmText: document.getElementById("reaffirm-text"),
     streakPillText: document.getElementById("streak-pill-text"),
@@ -489,17 +616,20 @@ function testModeModal() {
 }
 
 function dayDetailModal() {
-  const day = state.moodHistory[state.selectedDayIdx];
-  if (!day) return "";
-  const mood = moodByValue(day.value);
+  const entries = entriesForDay(state.checkInEntries, state.chartSelectedDate);
+  const entry = entries[state.selectedEntryIdx];
+  if (!entry) return "";
+  const mood = moodByValue(entry.value);
+  const bucket = timeOfDayLabel(entry.at);
+  const dateLbl = shortDateLabel(entry.at);
   return `
     <div id="day-detail-overlay" class="day-detail-overlay">
       <div class="day-detail-modal">
         <button id="day-detail-close" class="day-detail-close" type="button" aria-label="Close">✕</button>
         <span class="day-detail-emoji">${mood.emoji}</span>
-        <p class="day-detail-day">${day.label === "Today" ? "Today" : day.label}</p>
+        <p class="day-detail-day">${bucket} · ${dateLbl}</p>
         <p class="day-detail-mood">Feeling ${mood.label.toLowerCase()}</p>
-        <p class="day-detail-message">${day.message}</p>
+        <p class="day-detail-message">${entry.message}</p>
       </div>
     </div>
   `;
@@ -513,7 +643,7 @@ function rulesModal() {
         <p class="day-detail-day">EazeScore Daily</p>
         <p class="day-detail-mood">How today's score works</p>
         <ul class="rules-list">
-          <li>Check in daily to earn 10 points.</li>
+          <li>Check in every 3 hours to earn 10 points.</li>
           <li>A 7-day streak earns a 50-point bonus.</li>
           <li>A missed day resets streak, not score.</li>
           <li>Every point adds to your EazeScore.</li>
@@ -573,6 +703,7 @@ function homePage() {
           </span>
         </div>
         <div class="score-bar-track">
+          <div class="score-bar-ticks"><span></span><span></span><span></span><span></span><span></span></div>
           <div class="score-bar-fill" id="score-bar-fill"></div>
         </div>
         <p class="score-caption" id="score-caption"></p>
@@ -606,7 +737,7 @@ function checkinPage() {
         <div class="header-row">
           <div>
             <p class="eyebrow">Daily Check-in</p>
-            <h1 class="headline">How are you feeling today?</h1>
+            <h1 class="headline">How are you feeling right now?</h1>
           </div>
           <div class="eaze-logo" aria-label="Eaze">
             <img src="${EAZE_LOGO_WHITE_SRC}" alt="Eaze" width="44" height="44" />
@@ -630,30 +761,30 @@ function checkinPage() {
           </span>
         </div>
         <div class="score-bar-track">
+          <div class="score-bar-ticks"><span></span><span></span><span></span><span></span><span></span></div>
           <div class="score-bar-fill" id="score-bar-fill"></div>
         </div>
         <p class="score-caption" id="score-caption"></p>
       </section>
 
       <section class="card entry-card" id="entry-card">
-        <p class="entry-prompt">Pick how today felt</p>
+        <p class="entry-prompt">Pick how you're feeling right now</p>
         <div class="mood-picker" id="mood-picker" role="radiogroup" aria-label="Select your mood"></div>
 
-        <label class="field-label" for="reflection-text">Add a note <span class="optional-tag">(optional)</span></label>
+        <label class="field-label" for="reflection-text">Add a note <span class="optional-tag">(optional, 100 words max)</span></label>
         <textarea
           id="reflection-text"
           class="reflection-textarea"
           placeholder="Write freely — this is just for you…"
-          rows="3"
+          rows="2"
         ></textarea>
+        <p class="note-counter" id="note-counter">0/100 words</p>
 
         <button class="btn btn--filled" id="save-btn" disabled>
           <span id="save-btn-label">Save</span>
         </button>
 
-        <p class="done-note" id="done-note" hidden>
-          You've checked in today — come back tomorrow to keep your streak going.
-        </p>
+        <p class="done-note" id="done-note" hidden></p>
       </section>
 
       <section class="card reaffirm-card" id="reaffirm-card" hidden>
@@ -662,7 +793,14 @@ function checkinPage() {
 
       <div class="grid-two">
         <section class="card chart-card">
-          <h2 class="section-label"><span class="section-icon">${ICONS.trend}</span>Mood Over Time</h2>
+          <div class="chart-card-header">
+            <h2 class="section-label"><span class="section-icon">${ICONS.trend}</span>Mood Over Time</h2>
+            ${
+              state.chartView === "day" && groupEntriesByDay(state.checkInEntries).length > 1
+                ? `<button id="chart-back-btn" class="chart-back-btn" type="button">${ICONS.backArrow} All days</button>`
+                : ""
+            }
+          </div>
           <div id="chart-wrap" class="chart-wrap">
             <div id="chart-scroll" class="chart-scroll">
               <svg id="mood-chart"></svg>
@@ -687,7 +825,17 @@ function checkinPage() {
 }
 
 // ---------- Render dispatcher ----------
+// Ticks the check-in page while its cooldown countdown is showing, so "next
+// check-in opens at HH:MM" clears itself once true, instead of staying
+// stuck disabled until the user manually reloads.
+let cooldownTimer = null;
+
 function render() {
+  if (cooldownTimer) {
+    clearInterval(cooldownTimer);
+    cooldownTimer = null;
+  }
+
   if (state.view === "login") {
     root.innerHTML = loginPage() + (state.showTestModal ? testModeModal() : "");
     wireLoginEvents();
@@ -704,15 +852,26 @@ function render() {
     root.innerHTML =
       checkinPage() +
       (state.showTestModal ? testModeModal() : "") +
-      (state.selectedDayIdx !== null ? dayDetailModal() : "") +
+      (state.selectedEntryIdx !== null ? dayDetailModal() : "") +
       (state.showRulesModal ? rulesModal() : "");
     queryEls();
     wireCheckinEvents();
     if (state.isTester) wireTesterToolbar();
     if (state.showTestModal) wireTestModal();
-    if (state.selectedDayIdx !== null) wireDayDetailModal();
+    if (state.selectedEntryIdx !== null) wireDayDetailModal();
     if (state.showRulesModal) wireRulesModal();
     renderAll();
+    if (inCooldown()) {
+      cooldownTimer = setInterval(() => {
+        if (inCooldown()) {
+          renderEntryState();
+        } else {
+          clearInterval(cooldownTimer);
+          cooldownTimer = null;
+          renderAll();
+        }
+      }, 30000);
+    }
   }
 }
 
@@ -841,12 +1000,13 @@ function wireTestModal() {
       state.showTestModal = false;
       Object.assign(state, scenarioState(key));
       state.selectedMood = null;
-      state.submittedToday = false;
+      state.checkedInToday = false;
+      state.nextCheckinAt = null;
       // Simulated home-page fields — testers never hit the real backend, so
       // these are derived locally instead of coming from GET /eaze-score.
       // "Fresh Start" doubles as the demo for a first-ever login: the
       // welcome bonus fires once, same as it would for a real new user.
-      state.sessionsCount = state.moodHistory.length;
+      state.sessionsCount = state.checkInEntries.length;
       state.todayEarned = 0;
       state.welcomeBonusJustAwarded = key === "fresh";
       if (state.welcomeBonusJustAwarded) state.eazeScore += 20;
@@ -872,16 +1032,18 @@ function wireTesterToolbar() {
     state.lastBonusAwarded = false;
     state.todayEarned = 0;
     state.selectedMood = null;
-    state.submittedToday = false;
+    state.checkedInToday = false;
+    state.nextCheckinAt = null;
     render();
   });
 
   document.getElementById("tester-sim-reset")?.addEventListener("click", () => {
     Object.assign(state, scenarioState(state.testMode || "active"));
-    state.sessionsCount = state.moodHistory.length;
+    state.sessionsCount = state.checkInEntries.length;
     state.todayEarned = 0;
     state.selectedMood = null;
-    state.submittedToday = false;
+    state.checkedInToday = false;
+    state.nextCheckinAt = null;
     render();
   });
 }
@@ -897,7 +1059,8 @@ function logout() {
   state.showTestModal = false;
   state.showCountrySheet = false;
   state.selectedMood = null;
-  state.submittedToday = false;
+  state.checkedInToday = false;
+  state.nextCheckinAt = null;
   state.sessionsCount = 0;
   state.todayEarned = 0;
   state.welcomeBonusJustAwarded = false;
@@ -922,11 +1085,33 @@ function wireCheckinEvents() {
     render();
   });
 
+  document.getElementById("chart-back-btn")?.addEventListener("click", () => {
+    state.chartView = "overview";
+    state.chartSelectedDate = null;
+    render();
+  });
+
   els.chart?.addEventListener("click", (e) => {
     const hit = e.target.closest("[data-idx]");
     if (!hit) return;
-    state.selectedDayIdx = Number(hit.dataset.idx);
+    const idx = Number(hit.dataset.idx);
+    if (state.chartView === "overview") {
+      const day = groupEntriesByDay(state.checkInEntries)[idx];
+      if (!day) return;
+      state.chartView = "day";
+      state.chartSelectedDate = day.dateKey;
+    } else {
+      state.selectedEntryIdx = idx;
+    }
     render();
+  });
+
+  els.textarea?.addEventListener("input", () => {
+    const words = els.textarea.value.trim().split(/\s+/).filter(Boolean);
+    if (words.length > NOTE_WORD_LIMIT) {
+      els.textarea.value = words.slice(0, NOTE_WORD_LIMIT).join(" ");
+    }
+    renderNoteCounter();
   });
 }
 
@@ -936,9 +1121,10 @@ function wireHomeEvents() {
 
   document.getElementById("checkin-banner-btn")?.addEventListener("click", () => {
     state.view = "checkin";
-    // Only clear the transient mood pick — submittedToday/streakDays reflect
-    // real (or tester-simulated) state and must not be force-reset here, or
-    // they'd desync from what's actually true until the fetch below lands.
+    // Only clear the transient mood pick — checkedInToday/nextCheckinAt/
+    // streakDays reflect real (or tester-simulated) state and must not be
+    // force-reset here, or they'd desync from what's actually true until the
+    // fetch below lands.
     state.selectedMood = null;
     render();
     if (!state.isTester && state.phone) loadRealUserData(state.phone);
@@ -961,11 +1147,11 @@ function wireRulesModal() {
 function wireDayDetailModal() {
   document.getElementById("day-detail-overlay")?.addEventListener("click", (e) => {
     if (e.target.id !== "day-detail-overlay") return;
-    state.selectedDayIdx = null;
+    state.selectedEntryIdx = null;
     render();
   });
   document.getElementById("day-detail-close")?.addEventListener("click", () => {
-    state.selectedDayIdx = null;
+    state.selectedEntryIdx = null;
     render();
   });
 }
@@ -973,6 +1159,23 @@ function wireDayDetailModal() {
 function currentStreakCount() {
   // Filled days are always contiguous starting from the leftmost circle.
   return state.streakDays.filter(Boolean).length;
+}
+
+// True while the user is waiting out the cooldown between check-ins — the
+// entry form gates on this instead of "already checked in today," since
+// several check-ins a day are now allowed.
+function inCooldown() {
+  if (!state.nextCheckinAt) return false;
+  return new Date() < parseUtc(state.nextCheckinAt);
+}
+
+const NOTE_WORD_LIMIT = 100;
+
+function renderNoteCounter() {
+  if (!els.noteCounter || !els.textarea) return;
+  const words = els.textarea.value.trim() ? els.textarea.value.trim().split(/\s+/).length : 0;
+  els.noteCounter.textContent = `${words}/${NOTE_WORD_LIMIT} words`;
+  els.noteCounter.classList.toggle("note-counter--limit", words >= NOTE_WORD_LIMIT);
 }
 
 function renderMoodPicker() {
@@ -983,7 +1186,7 @@ function renderMoodPicker() {
     btn.className = "mood-option" + (state.selectedMood === mood.value ? " selected" : "");
     btn.setAttribute("role", "radio");
     btn.setAttribute("aria-checked", state.selectedMood === mood.value ? "true" : "false");
-    btn.disabled = state.submittedToday || state.submitting;
+    btn.disabled = inCooldown() || state.submitting;
     btn.innerHTML = `<span class="mood-circle"><span class="emoji">${mood.emoji}</span></span><span class="mood-label">${mood.label}</span>`;
     btn.addEventListener("click", () => {
       state.selectedMood = mood.value;
@@ -995,19 +1198,25 @@ function renderMoodPicker() {
 }
 
 function renderSaveButton() {
-  els.saveBtn.disabled = state.submittedToday || state.submitting || state.selectedMood === null;
+  const cooldown = inCooldown();
+  els.saveBtn.disabled = cooldown || state.submitting || state.selectedMood === null;
   els.saveBtnLabel.innerHTML = state.submitting
     ? '<span class="spinner"></span> Thinking…'
-    : state.submittedToday
+    : cooldown
     ? "Saved"
     : "Save";
 }
 
 function renderEntryState() {
-  els.textarea.disabled = state.submittedToday || state.submitting;
-  els.doneNote.hidden = !state.submittedToday;
+  const cooldown = inCooldown();
+  els.textarea.disabled = cooldown || state.submitting;
+  els.doneNote.hidden = !cooldown;
+  if (cooldown) {
+    els.doneNote.textContent = `Nice check-in! Your next one opens at ${formatClockTime(parseUtc(state.nextCheckinAt))}.`;
+  }
   renderMoodPicker();
   renderSaveButton();
+  renderNoteCounter();
 }
 
 function renderReaffirm(message) {
@@ -1019,13 +1228,32 @@ function renderReaffirm(message) {
   els.reaffirmCard.hidden = false;
 }
 
+// Health-app-style two-level chart: 'overview' plots one averaged dot per
+// day (tap a day -> drill in); 'day' plots every individual check-in from
+// one specific day as an emoji marker on a Morning/Afternoon/Evening/Night
+// axis (tap an entry -> open its detail modal). Both share the same line/
+// area/axis rendering below — only how `points` is built differs.
 function renderChart() {
-  const points = state.moodHistory;
-  // Fresh Start users have zero history — show the chart the moment they
-  // submit their first entry rather than waiting to accumulate several.
-  const MIN_POINTS = 1;
+  if (state.checkInEntries.length === 0) {
+    els.chartWrap.hidden = true;
+    els.chartEmpty.hidden = false;
+    return;
+  }
 
-  if (points.length < MIN_POINTS) {
+  const isDayView = state.chartView === "day";
+  const points = isDayView
+    ? entriesForDay(state.checkInEntries, state.chartSelectedDate).map((e) => ({
+        value: e.value,
+        label: timeOfDayLabel(e.at),
+        emoji: moodByValue(e.value).emoji,
+      }))
+    : groupEntriesByDay(state.checkInEntries).map((d) => ({
+        value: d.avgValue,
+        label: dayLabel(daysAgoFromKey(d.dateKey)),
+        emoji: null,
+      }));
+
+  if (points.length === 0) {
     els.chartWrap.hidden = true;
     els.chartEmpty.hidden = false;
     return;
@@ -1034,8 +1262,8 @@ function renderChart() {
   els.chartEmpty.hidden = true;
 
   const H = 200;
-  // Fixed pixel spacing per day rather than stretching to fill the card —
-  // about 4 days fit in view at once, the rest reachable by scrolling right,
+  // Fixed pixel spacing per point rather than stretching to fill the card —
+  // about 4 fit in view at once, the rest reachable by scrolling right,
   // oldest to newest matching the streak row's left-to-right direction.
   const SLOT = 64, PAD_X = 24, PAD_TOP = 22, PAD_BOTTOM = 18;
   const usableH = H - PAD_TOP - PAD_BOTTOM;
@@ -1047,7 +1275,7 @@ function renderChart() {
 
   const coords = points.map((p, i) => [PAD_X + i * SLOT, valueToY(p.value)]);
 
-  // Straight segments only — the line must land exactly on each day's mood
+  // Straight segments only — the line must land exactly on each point's mood
   // row, never curve past it between points.
   const linePath = coords.map(([x, y], i) => `${i === 0 ? "M" : "L"}${x.toFixed(1)},${y.toFixed(1)}`).join(" ");
   const areaPath =
@@ -1063,14 +1291,18 @@ function renderChart() {
     .map(([x, y], i) => {
       const isMostRecent = i === n - 1;
       const backingR = isMostRecent ? 15 : 12;
-      const emojiSize = isMostRecent ? 19 : 16;
-      const emoji = moodByValue(points[i].value).emoji;
+      // Day view: the actual mood emoji, since each point is one real entry.
+      // Overview: a plain dot, since an averaged day has no single emoji —
+      // matches the clean trend-line look of iOS Health's own overview.
+      const inner = points[i].emoji
+        ? `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" font-size="${isMostRecent ? 19 : 16}" text-anchor="middle" dominant-baseline="central">${points[i].emoji}</text>`
+        : `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${isMostRecent ? 6 : 5}" fill="${isMostRecent ? "#FF9E44" : "#FFC998"}" />`;
       return `
         <g class="chart-point" data-idx="${i}">
           <circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${backingR}" fill="${
         isMostRecent ? "rgba(255,158,68,0.22)" : "rgba(19,13,33,0.5)"
       }" stroke="${isMostRecent ? "#FF9E44" : "rgba(255,255,255,0.12)"}" stroke-width="${isMostRecent ? 2 : 1}" />
-          <text x="${x.toFixed(1)}" y="${y.toFixed(1)}" font-size="${emojiSize}" text-anchor="middle" dominant-baseline="central">${emoji}</text>
+          ${inner}
         </g>
       `;
     })
@@ -1114,7 +1346,7 @@ function renderStreak() {
   state.streakDays.forEach((filled, i) => {
     // Today's pending slot is whichever circle comes right after the filled
     // streak — not a fixed position — since filled days start at index 0.
-    const isTodayPending = !state.submittedToday && i === count;
+    const isTodayPending = !state.checkedInToday && i === count;
     const dot = document.createElement("div");
     dot.className = "streak-dot" + (filled ? " filled" : isTodayPending ? " today-pending" : "");
     dot.dataset.idx = i;
@@ -1165,7 +1397,7 @@ function renderDailyScore() {
   const pct = Math.round((Math.min(state.todayEarned, MAX_DAILY_SCORE) / MAX_DAILY_SCORE) * 100);
   els.scoreValue.textContent = state.todayEarned;
   els.scoreBarFill.style.width = `${pct}%`;
-  els.scoreCaption.textContent = !state.submittedToday
+  els.scoreCaption.textContent = !state.checkedInToday
     ? "Check in today to add to your EazeScore"
     : state.lastBonusAwarded || state.todayEarned >= MAX_DAILY_SCORE
     ? `+${state.todayEarned} added — includes today's streak bonus`
@@ -1192,13 +1424,18 @@ function renderHome() {
 }
 
 async function handleSave() {
-  if (state.selectedMood === null || state.submitting || state.submittedToday) return;
+  if (state.selectedMood === null || state.submitting || inCooldown()) return;
 
   state.submitting = true;
   renderEntryState();
 
   const mood = state.selectedMood;
   const message = pickMessage(mood);
+  const now = new Date();
+  // A streak dot only ever advances on the day's FIRST check-in — a 2nd or
+  // 3rd same-day entry still earns points but shouldn't push the streak
+  // forward again.
+  const wasCheckedInToday = state.checkedInToday;
 
   if (!state.isTester) {
     // Real user: persist for real, so this survives a refresh. The backend
@@ -1208,16 +1445,24 @@ async function handleSave() {
       const note = els.textarea.value.trim() || null;
       const result = await apiPost("/checkins", { phone: state.phone, mood, note });
 
-      state.moodHistory = [...state.moodHistory, { value: mood, label: "Today", message }].slice(-7);
-      const todayIdx = state.streakDays.indexOf(false);
-      if (todayIdx !== -1) state.streakDays[todayIdx] = true;
+      state.checkInEntries = [...state.checkInEntries, { value: mood, at: now, message }].slice(-RAW_ENTRIES_CAP);
+      if (state.chartView === "day" && !state.chartSelectedDate) {
+        state.chartSelectedDate = localDateKey(now);
+      }
+
+      let todayIdx = -1;
+      if (!wasCheckedInToday) {
+        todayIdx = state.streakDays.indexOf(false);
+        if (todayIdx !== -1) state.streakDays[todayIdx] = true;
+      }
 
       state.eazeScore = result.score.earned;
       state.todayEarned = result.score.today_earned;
       state.sessionsCount = result.score.sessions_count;
       state.lastBonusAwarded = result.streak_bonus_awarded;
+      state.checkedInToday = true;
+      state.nextCheckinAt = result.score.next_checkin_at;
       state.submitting = false;
-      state.submittedToday = true;
 
       renderAll();
       renderReaffirm(message);
@@ -1236,30 +1481,43 @@ async function handleSave() {
   // the real backend.
   await new Promise((resolve) => setTimeout(resolve, 700));
 
-  // One entry per day: today's check-in joins the history at the end (chart
-  // is chronological, oldest to newest), oldest day drops off the front so
-  // it always shows a fixed 7-day window, never growing unbounded. The
-  // message is stored with the day so tapping this point later shows the
-  // exact same reassurance, not a freshly re-rolled one.
-  state.moodHistory = [...state.moodHistory, { value: mood, label: "Today", message }].slice(-7);
-  // Fill whichever circle comes right after the current streak — filled days
-  // are always contiguous starting from the leftmost circle.
-  const streakBefore = currentStreakCount();
-  const todayIdx = state.streakDays.indexOf(false);
-  if (todayIdx !== -1) state.streakDays[todayIdx] = true;
-  const streakAfter = currentStreakCount();
+  // Newest check-in joins the history at the end (chart is chronological,
+  // oldest to newest), oldest entry drops off the front so it always shows a
+  // fixed window, never growing unbounded. The message is stored with the
+  // entry so tapping this point later shows the exact same reassurance, not
+  // a freshly re-rolled one.
+  state.checkInEntries = [...state.checkInEntries, { value: mood, at: now, message }].slice(-RAW_ENTRIES_CAP);
+  if (state.chartView === "day" && !state.chartSelectedDate) {
+    state.chartSelectedDate = localDateKey(now);
+  }
 
-  // Every check-in earns points; completing a full 7-day week on top of that
-  // earns the one-time weekly bonus, awarded exactly on the save that gets
-  // the streak from below 7 to 7.
+  // Fill whichever circle comes right after the current streak — filled days
+  // are always contiguous starting from the leftmost circle. Only on the
+  // day's first check-in, same rule as the real-user path above.
+  let todayIdx = -1;
+  let streakAfter = currentStreakCount();
+  if (!wasCheckedInToday) {
+    const streakBefore = currentStreakCount();
+    todayIdx = state.streakDays.indexOf(false);
+    if (todayIdx !== -1) state.streakDays[todayIdx] = true;
+    streakAfter = currentStreakCount();
+    state.lastBonusAwarded = streakBefore < 7 && streakAfter >= 7;
+  } else {
+    state.lastBonusAwarded = false;
+  }
+
+  // Every check-in earns points, regardless of how many already happened
+  // today; completing a full 7-day week earns the one-time weekly bonus,
+  // awarded exactly on the day's first check-in that gets the streak to 7.
   state.eazeScore += POINTS_PER_CHECKIN;
-  state.lastBonusAwarded = streakBefore < 7 && streakAfter >= 7;
-  state.todayEarned = POINTS_PER_CHECKIN + (state.lastBonusAwarded ? WEEKLY_STREAK_BONUS : 0);
+  state.todayEarned += POINTS_PER_CHECKIN + (state.lastBonusAwarded ? WEEKLY_STREAK_BONUS : 0);
   if (state.lastBonusAwarded) state.eazeScore += WEEKLY_STREAK_BONUS;
   state.sessionsCount += 1;
+  state.checkedInToday = true;
+  // Simulated cooldown, same 3-hour window the real backend enforces.
+  state.nextCheckinAt = new Date(now.getTime() + 3 * 60 * 60 * 1000).toISOString();
 
   state.submitting = false;
-  state.submittedToday = true;
 
   renderAll();
   renderReaffirm(message);

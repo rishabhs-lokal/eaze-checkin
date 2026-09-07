@@ -44,6 +44,13 @@ class EazeScoreState(BaseModel):
     sessions_count: int = 0
     today_earned: int = 0
     welcome_bonus_awarded_now: bool = False
+    # Whether today already has at least one check-in — drives the streak
+    # dot's filled/pending state, independent of the cooldown below (a user
+    # can be checked in for today and still be on cooldown for their next one).
+    checked_in_today: bool = False
+    # None means eligible right now; otherwise the ISO timestamp (UTC) of
+    # when this user's next check-in will next earn points.
+    next_checkin_at: datetime | None = None
 
 
 class CheckInResult(BaseModel):

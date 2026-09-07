@@ -35,8 +35,10 @@ async def get_eaze_score(phone: str, db: AsyncSession = Depends(get_db)) -> Eaze
     dates = await eaze_score.get_check_in_dates(db, user.id)
     sessions_count = await eaze_score.get_session_count(db, user.id)
     today_earned = await eaze_score.get_today_earned(db, user.id)
+    last_checkin_at = await eaze_score.get_last_checkin_at(db, user.id)
 
     today = datetime.now(timezone.utc).date()
+    checked_in_today = today in dates
     streak = eaze_score.compute_streak(dates, today)
     if streak == 0:
         # Not checked in today — still show the run ending yesterday so the
@@ -51,6 +53,8 @@ async def get_eaze_score(phone: str, db: AsyncSession = Depends(get_db)) -> Eaze
         sessions_count=sessions_count,
         today_earned=today_earned,
         welcome_bonus_awarded_now=welcome_bonus_awarded_now,
+        checked_in_today=checked_in_today,
+        next_checkin_at=eaze_score.next_eligible_at(last_checkin_at),
     )
 
 

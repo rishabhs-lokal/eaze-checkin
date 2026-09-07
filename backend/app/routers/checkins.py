@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,25 +17,35 @@ router = APIRouter(prefix="/checkins", tags=["checkins"])
 async def create_check_in(payload: CheckInCreate, db: AsyncSession = Depends(get_db)) -> CheckInResult:
     user = await get_or_create_user(db, payload.phone)
 
+    # Naive UTC, matching how created_at is stored (see get_today_earned) —
+    # comparisons against DB timestamps need both sides naive.
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    last_checkin_at = await eaze_score.get_last_checkin_at(db, user.id)
+    next_eligible = eaze_score.next_eligible_at(last_checkin_at)
+    if next_eligible is not None and now < next_eligible:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Next check-in available at {next_eligible.isoformat()}Z",
+        )
+
     existing_dates = await eaze_score.get_check_in_dates(db, user.id)
-    today = datetime.now(timezone.utc).date()
-    streak_after, award_daily, bonus_awarded = eaze_score.evaluate_checkin(existing_dates, today)
+    today = now.date()
+    streak_after, first_of_day, bonus_awarded = eaze_score.evaluate_checkin(existing_dates, today)
 
     check_in = CheckIn(user_id=user.id, mood=payload.mood, note=payload.note)
     db.add(check_in)
 
-    if award_daily:
+    # Every check-in that clears the cooldown above earns points — no longer
+    # gated to once per calendar day (see CHECKIN_COOLDOWN).
+    db.add(
+        EazeScoreEvent(user_id=user.id, delta=eaze_score.POINTS_PER_CHECKIN, reason="daily_checkin")
+    )
+    if bonus_awarded:
         db.add(
             EazeScoreEvent(
-                user_id=user.id, delta=eaze_score.POINTS_PER_CHECKIN, reason="daily_checkin"
+                user_id=user.id, delta=eaze_score.WEEKLY_STREAK_BONUS, reason="streak_bonus"
             )
         )
-        if bonus_awarded:
-            db.add(
-                EazeScoreEvent(
-                    user_id=user.id, delta=eaze_score.WEEKLY_STREAK_BONUS, reason="streak_bonus"
-                )
-            )
 
     await db.commit()
     await db.refresh(check_in)
@@ -44,14 +54,13 @@ async def create_check_in(payload: CheckInCreate, db: AsyncSession = Depends(get
     # succeeds, so this app's own record of the check-in is never at risk of
     # being lost to a slow/unreachable dependency. eaze_user_id is the raw
     # phone number, unchanged — must match eaze-level-up's key exactly.
-    if award_daily:
+    await shared_ledger.report_to_shared_ledger(
+        eaze_user_id=payload.phone, event_type="daily_checkin", points=eaze_score.POINTS_PER_CHECKIN,
+    )
+    if bonus_awarded:
         await shared_ledger.report_to_shared_ledger(
-            eaze_user_id=payload.phone, event_type="daily_checkin", points=eaze_score.POINTS_PER_CHECKIN,
+            eaze_user_id=payload.phone, event_type="streak_bonus", points=eaze_score.WEEKLY_STREAK_BONUS,
         )
-        if bonus_awarded:
-            await shared_ledger.report_to_shared_ledger(
-                eaze_user_id=payload.phone, event_type="streak_bonus", points=eaze_score.WEEKLY_STREAK_BONUS,
-            )
 
     earned, claimed = await eaze_score.get_score_totals(db, user.id)
     sessions_count = await eaze_score.get_session_count(db, user.id)
@@ -65,6 +74,8 @@ async def create_check_in(payload: CheckInCreate, db: AsyncSession = Depends(get
             streak=streak_after,
             sessions_count=sessions_count,
             today_earned=today_earned,
+            checked_in_today=True,
+            next_checkin_at=eaze_score.next_eligible_at(check_in.created_at),
         ),
         streak_bonus_awarded=bonus_awarded,
     )

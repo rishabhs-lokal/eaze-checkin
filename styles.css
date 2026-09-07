@@ -44,6 +44,12 @@
   /* The one approved shadow in the system — overlays/temporary surfaces only */
   --shadow-overlay: 0 2px 4px rgba(0, 0, 0, 0.10);
 
+  /* Card fill: Primary/500 (the actual brand orange, not the muddy Primary/800
+     pressed-state token) at a low opacity — a clean, brand-tied tint that
+     reads as a warm dark surface distinct from the screen background without
+     competing with it, and ties back to the same orange used in the bg glow. */
+  --card-fill: rgba(255, 158, 68, 0.14);
+
   /* Fraunces = headlines only (never below 24px). Plus Jakarta Sans = everything else. */
   --font-display: "Fraunces", Georgia, "Times New Roman", serif;
   --font-ui: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -80,16 +86,20 @@ body {
 }
 
 /* Deliberate, explicit departure from the design handbook's "no gradients /
-   solid #171A1D only" background rule — user asked for this exact grey→orange
-   blurred gradient over the handbook default. Scoped to just the screen
-   background; every other surface in the app stays handbook-compliant. */
+   solid #171A1D only" background rule — user asked for this exact gradient
+   look over the handbook default. Scoped to just the screen background;
+   every other surface in the app stays handbook-compliant. Unlike the
+   earlier version of this background, every color here is an actual Eaze
+   token (Primary/500 orange glow, Secondary/500 purple glow, Secondary/800
+   as the near-black base) rather than an invented hex value. */
 .gradient-bg {
   position: fixed;
   inset: 0;
   z-index: -1;
   background:
-    radial-gradient(ellipse 55% 65% at 76% 42%, rgba(255, 158, 68, 0.65) 0%, transparent 70%),
-    linear-gradient(100deg, #928678 0%, #4b4038 42%, #241a12 78%, #1c1310 100%);
+    radial-gradient(ellipse 50% 40% at 12% 6%, rgba(255, 158, 68, 0.55) 0%, transparent 65%),
+    radial-gradient(ellipse 55% 45% at 88% 4%, rgba(111, 61, 213, 0.4) 0%, transparent 62%),
+    var(--secondary-800);
 }
 
 .container {
@@ -115,10 +125,10 @@ body {
   margin: 0 0 6px;
   font-size: 14px;
   line-height: 18px;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: 1px;
   text-transform: uppercase;
-  color: var(--primary-200);
+  color: var(--white-60);
 }
 
 .headline {
@@ -166,21 +176,20 @@ body {
   color: var(--white-80);
 }
 
-/* The one branded accent inside otherwise-UI-font text: hero numbers (streak
-   counts, score) get Bold weight + the brand color, so a glance at any stat
-   feels recognizably part of this app. */
+/* Hero numbers (streak counts, score) get Bold weight + full-white emphasis —
+   the hierarchy signal is opacity/weight, not an invented text color. */
 .stat-num {
   font-weight: 700;
-  color: var(--primary-500);
+  color: var(--white-100);
 }
 
 /* ---------- Card surface ---------- */
 .card {
-  background: var(--white-10);
-  border: 1px solid var(--primary-500);
+  background: var(--card-fill);
+  border: 1px solid var(--white-40);
   border-radius: 20px;
-  padding: 22px;
-  margin-bottom: 16px;
+  padding: 18px;
+  margin-bottom: 12px;
 }
 
 .section-label {
@@ -207,9 +216,9 @@ body {
    semantic meaning (progress/status) from the primary orange used elsewhere —
    never a second filled/gradient treatment. */
 .score-card {
-  padding: 18px 22px;
-  background: var(--white-10);
-  border: 1px solid var(--primary-500);
+  padding: 14px 18px;
+  background: var(--card-fill);
+  border: 1px solid var(--white-40);
 }
 
 .score-header {
@@ -273,7 +282,7 @@ button.score-label {
   font-variation-settings: "opsz" 144, "SOFT" 100;
   font-size: 24px;
   line-height: 30px;
-  color: var(--primary-500);
+  color: var(--white-100);
 }
 
 .score-bonus-text {
@@ -290,10 +299,34 @@ button.score-label {
   height: 8px;
   border-radius: 8px;
   background: var(--white-10);
+  overflow: hidden;
+}
+
+/* Evenly spaced tick marks along the track, underneath the fill — the fill's
+   opaque color covers whichever ticks fall inside it, so only the ticks
+   ahead of the current progress stay visible (same read as the reference
+   screenshot's dotted scale, recolored to Eaze tokens instead of green/grey). */
+.score-bar-ticks {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 6px;
+}
+
+.score-bar-ticks span {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--white-40);
+  flex-shrink: 0;
 }
 
 .score-bar-fill {
   position: relative;
+  z-index: 2;
   height: 100%;
   border-radius: 8px;
   background: var(--primary-500);
@@ -336,7 +369,7 @@ button.score-label {
 
 /* ---------- Entry card ---------- */
 .entry-prompt {
-  margin: 0 0 14px;
+  margin: 0 0 10px;
   font-size: 14px;
   line-height: 20px;
   font-weight: 700;
@@ -349,7 +382,7 @@ button.score-label {
   line-height: 20px;
   font-weight: 400;
   color: var(--white-60);
-  margin: 22px 0 10px;
+  margin: 14px 0 6px;
 }
 
 .optional-tag {
@@ -360,11 +393,11 @@ button.score-label {
 .reflection-textarea {
   width: 100%;
   resize: vertical;
-  min-height: 96px;
+  min-height: 60px;
   background: var(--white-10);
   border: 1px solid var(--white-20);
   border-radius: 12px;
-  padding: 14px 16px;
+  padding: 12px 14px;
   font-family: var(--font-ui);
   font-size: 16px;
   line-height: 24px;
@@ -382,11 +415,19 @@ button.score-label {
   resize: none;
 }
 
-.reflection-textarea { margin-bottom: 20px; }
+.note-counter {
+  margin: 6px 0 14px;
+  font-size: 11px;
+  line-height: 14px;
+  color: var(--white-40);
+  text-align: right;
+}
+
+.note-counter--limit { color: var(--error-500); }
 
 .mood-picker {
   display: flex;
-  gap: 8px;
+  gap: 6px;
   margin: 0;
   justify-content: space-between;
 }
@@ -396,7 +437,7 @@ button.score-label {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   padding: 2px;
   border: none;
   background: transparent;
@@ -407,8 +448,8 @@ button.score-label {
 }
 
 .mood-circle {
-  width: 52px;
-  height: 52px;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -420,7 +461,7 @@ button.score-label {
 
 .mood-option:hover .mood-circle { border-color: var(--white-40); }
 
-.mood-option .emoji { font-size: 26px; line-height: 1; }
+.mood-option .emoji { font-size: 22px; line-height: 1; }
 
 .mood-option .mood-label {
   font-size: 11px;
@@ -435,9 +476,14 @@ button.score-label {
   border-color: var(--primary-500);
 }
 
-.mood-option.selected .mood-label { color: var(--primary-200); }
+.mood-option.selected .mood-label { color: var(--white-100); }
 
-.mood-option:disabled { cursor: not-allowed; opacity: 0.55; }
+.mood-option:disabled { cursor: not-allowed; }
+
+/* Once a check-in is locked in (disabled), only the moods NOT picked dim —
+   the selected one stays fully bright so it's obvious what was chosen. While
+   still picking (enabled), every emoji stays at full brightness. */
+.mood-option:disabled:not(.selected) { opacity: 0.5; }
 
 .mood-option:focus-visible .mood-circle {
   outline: 2px solid var(--primary-200);
@@ -451,7 +497,7 @@ button.score-label {
   justify-content: center;
   gap: 8px;
   width: 100%;
-  height: 48px;
+  height: 44px;
   padding: 0 20px;
   border-radius: 12px;
   border: none;
@@ -481,7 +527,7 @@ button.score-label {
 }
 
 .done-note {
-  margin: 14px 0 0;
+  margin: 10px 0 0;
   font-size: 12px;
   line-height: 16px;
   color: var(--white-60);
@@ -490,8 +536,8 @@ button.score-label {
 
 /* ---------- Reaffirming message card ---------- */
 .reaffirm-card {
-  background: var(--white-10);
-  border: 1px solid var(--primary-500);
+  background: var(--card-fill);
+  border: 1px solid var(--white-40);
   animation: fadeInUp 0.4s ease;
 }
 
@@ -528,12 +574,38 @@ button.score-label {
 }
 
 /* ---------- Chart card ---------- */
-.chart-card { padding-bottom: 18px; }
+.chart-card { padding-bottom: 14px; }
+
+.chart-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.chart-card-header .section-label { margin: 0; }
+
+.chart-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  font-family: var(--font-ui);
+  color: var(--white-60);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0;
+  touch-action: manipulation;
+}
 
 .chart-wrap {
   position: relative;
-  margin: 6px -22px 2px;
-  padding: 0 22px;
+  margin: 6px -18px 2px;
+  padding: 0 18px;
   overflow-x: auto;
   overflow-y: hidden;
   -webkit-overflow-scrolling: touch;
@@ -668,7 +740,7 @@ button.score-label {
   font-size: 28px;
   line-height: 32px;
   font-weight: 700;
-  color: var(--primary-500);
+  color: var(--white-100);
 }
 
 .login-headline {
@@ -1020,7 +1092,7 @@ button.score-label {
   font-weight: 700;
   letter-spacing: 0.4px;
   text-transform: uppercase;
-  color: var(--primary-200);
+  color: var(--white-60);
 }
 
 .day-detail-mood {
@@ -1059,7 +1131,7 @@ button.score-label {
   padding: 8px 12px;
 }
 
-.tester-badge { font-size: 12px; line-height: 16px; font-weight: 700; color: var(--primary-200); }
+.tester-badge { font-size: 12px; line-height: 16px; font-weight: 700; color: var(--white-60); }
 
 .tester-link-btn {
   border: none;
@@ -1101,7 +1173,7 @@ button.score-label {
 
 .tester-mini-btn--set {
   border-color: var(--primary-500);
-  color: var(--primary-200);
+  color: var(--white-100);
 }
 
 .logout-link {
@@ -1126,8 +1198,8 @@ button.score-label {
   border: none;
   background: transparent;
   font-family: var(--font-ui);
-  font-size: 13px;
-  line-height: 18px;
+  font-size: 12px;
+  line-height: 16px;
   font-weight: 700;
   color: var(--white-60);
   cursor: pointer;
@@ -1142,8 +1214,8 @@ button.score-label {
   border: 1px solid var(--success-500);
   background: var(--white-10);
   color: var(--success-500);
-  font-size: 13px;
-  line-height: 18px;
+  font-size: 14px;
+  line-height: 20px;
   font-weight: 700;
   text-align: center;
   animation: fadeInUp 0.4s ease;
@@ -1155,8 +1227,8 @@ button.score-label {
 
 .sessions-label {
   margin: 0;
-  font-size: 13px;
-  line-height: 18px;
+  font-size: 12px;
+  line-height: 16px;
   color: var(--white-60);
 }
 
@@ -1166,7 +1238,7 @@ button.score-label {
   font-weight: 600;
   font-variation-settings: "opsz" 144, "SOFT" 100;
   font-size: 32px;
-  line-height: 38px;
+  line-height: 36px;
   color: var(--white-100);
 }
 
@@ -1204,8 +1276,8 @@ button.score-label {
 
 .home-banner-title {
   font-family: var(--font-ui);
-  font-size: 15px;
-  line-height: 20px;
+  font-size: 16px;
+  line-height: 24px;
   font-weight: 700;
   color: var(--primary-800);
 }

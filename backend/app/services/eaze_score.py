@@ -13,6 +13,10 @@ STREAK_TARGET = 7
 # (see app/routers/eaze_score.py) — not part of the daily_checkin/streak_bonus
 # earn rules, which stay exactly as they were.
 WELCOME_BONUS = 20
+# Multiple check-ins are allowed per day, each earning POINTS_PER_CHECKIN, as
+# long as this much time has passed since the user's last one — a rolling
+# cooldown, not a per-calendar-day reset (see next_eligible_at).
+CHECKIN_COOLDOWN = timedelta(hours=3)
 
 
 def compute_streak(dates: set[date], as_of: date) -> int:
@@ -26,26 +30,42 @@ def compute_streak(dates: set[date], as_of: date) -> int:
     return streak
 
 
-def evaluate_checkin(existing_dates: set[date], today: date) -> tuple[int, bool, bool]:
-    """Pure logic for one check-in submission, given the user's check-in dates
-    from before this request. Returns (streak_after, award_daily, bonus_awarded).
+def next_eligible_at(last_checkin_at: datetime | None) -> datetime | None:
+    """When this user's next check-in may earn points, per the cooldown. None
+    if they've never checked in (always eligible) or the cooldown has passed."""
+    if last_checkin_at is None:
+        return None
+    return last_checkin_at + CHECKIN_COOLDOWN
 
-    award_daily is False when today is already in existing_dates — the row
-    still gets created (see checkins.py), but points are only ever awarded
-    once per calendar day, mirroring the "one entry per day" intent without
-    a hard uniqueness constraint on the check_ins table.
+
+def evaluate_checkin(existing_dates: set[date], today: date) -> tuple[int, bool, bool]:
+    """Streak/bonus logic for one check-in submission, given the user's
+    check-in dates from before this request. Returns (streak_after,
+    first_of_day, bonus_awarded).
+
+    Points are no longer gated by "first check-in of the day" — the cooldown
+    in checkins.py handles that instead, and every check-in that clears it
+    earns points. first_of_day only matters for the streak: a day counts once
+    towards it regardless of how many check-ins happen within it, so the
+    streak-completion bonus should only ever fire on that day's first one.
     """
-    already_checked_in_today = today in existing_dates
+    first_of_day = today not in existing_dates
     streak_before = compute_streak(existing_dates, today - timedelta(days=1))
     streak_after = compute_streak(existing_dates | {today}, today)
-    award_daily = not already_checked_in_today
-    bonus_awarded = award_daily and streak_before < STREAK_TARGET and streak_after >= STREAK_TARGET
-    return streak_after, award_daily, bonus_awarded
+    bonus_awarded = first_of_day and streak_before < STREAK_TARGET and streak_after >= STREAK_TARGET
+    return streak_after, first_of_day, bonus_awarded
 
 
 async def get_check_in_dates(db: AsyncSession, user_id: uuid.UUID) -> set[date]:
     result = await db.execute(select(CheckIn.created_at).where(CheckIn.user_id == user_id))
     return {row[0].date() for row in result.all()}
+
+
+async def get_last_checkin_at(db: AsyncSession, user_id: uuid.UUID) -> datetime | None:
+    result = await db.execute(
+        select(func.max(CheckIn.created_at)).where(CheckIn.user_id == user_id)
+    )
+    return result.scalar_one_or_none()
 
 
 async def get_score_totals(db: AsyncSession, user_id: uuid.UUID) -> tuple[int, int]:
