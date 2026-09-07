@@ -461,7 +461,16 @@ button.score-label {
 
 .mood-option:hover .mood-circle { border-color: var(--white-40); }
 
-.mood-option .emoji { font-size: 22px; line-height: 1; }
+/* filter (not color/opacity) is what actually brightens or dims an emoji
+   glyph — color has no effect on emoji rendering. Every mood stays boosted
+   like this while picking; only the disabled-and-not-selected rule below
+   dials it back down once a check-in locks in. */
+.mood-option .emoji {
+  font-size: 22px;
+  line-height: 1;
+  filter: brightness(1.1) saturate(1.2);
+  transition: filter 0.15s ease;
+}
 
 .mood-option .mood-label {
   font-size: 11px;
@@ -482,8 +491,9 @@ button.score-label {
 
 /* Once a check-in is locked in (disabled), only the moods NOT picked dim —
    the selected one stays fully bright so it's obvious what was chosen. While
-   still picking (enabled), every emoji stays at full brightness. */
+   still picking (enabled), every emoji stays brightened (see .emoji above). */
 .mood-option:disabled:not(.selected) { opacity: 0.5; }
+.mood-option:disabled:not(.selected) .emoji { filter: brightness(0.7) saturate(0.6); }
 
 .mood-option:focus-visible .mood-circle {
   outline: 2px solid var(--primary-200);
