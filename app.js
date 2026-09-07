@@ -1180,12 +1180,17 @@ function renderNoteCounter() {
 
 function renderMoodPicker() {
   els.moodPicker.innerHTML = "";
+  const hasSelection = state.selectedMood !== null;
   MOODS.forEach((mood) => {
     const btn = document.createElement("button");
     btn.type = "button";
-    btn.className = "mood-option" + (state.selectedMood === mood.value ? " selected" : "");
+    const isSelected = state.selectedMood === mood.value;
+    // Dimming tracks selection, not save/lock-in — the moment any mood is
+    // picked the other four dull, whether or not Save has been tapped yet.
+    btn.className =
+      "mood-option" + (isSelected ? " selected" : "") + (hasSelection && !isSelected ? " dimmed" : "");
     btn.setAttribute("role", "radio");
-    btn.setAttribute("aria-checked", state.selectedMood === mood.value ? "true" : "false");
+    btn.setAttribute("aria-checked", isSelected ? "true" : "false");
     btn.disabled = inCooldown() || state.submitting;
     btn.innerHTML = `<span class="mood-circle"><span class="emoji">${mood.emoji}</span></span><span class="mood-label">${mood.label}</span>`;
     btn.addEventListener("click", () => {
