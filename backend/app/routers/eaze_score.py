@@ -67,17 +67,21 @@ async def claim_coins(payload: ClaimCreate, db: AsyncSession = Depends(get_db)) 
 
     earned, claimed = await eaze_score.get_score_totals(db, user.id)
     available = earned - claimed
-    if payload.amount > available:
-        raise HTTPException(
-            status_code=400, detail=f"Requested {payload.amount} exceeds available {available}"
-        )
+    if available <= 0:
+        raise HTTPException(status_code=400, detail="No EazeScore available to claim")
+
+    # Tiered, not 1:1 — see eaze_score.compute_coins. A claim always takes the
+    # full available balance; there's no partial-amount claim anymore.
+    coins = eaze_score.compute_coins(available)
 
     # Ledger deduction is inserted before the transfer is attempted — a failed
     # transfer never undoes it (see coin_claims.status), matching the reference
     # implementations: a claim record must never be missing when coins might
     # already be in flight, and a race on a second concurrent claim should see
-    # this deduction already reflected in `available`.
-    db.add(EazeScoreEvent(user_id=user.id, delta=-payload.amount, reason="claim"))
+    # this deduction already reflected in `available`. Deducting the full
+    # `available` amount is what "resets EazeScore to 0" — earned stays an
+    # untouched lifetime audit trail, only available drops to exactly 0.
+    db.add(EazeScoreEvent(user_id=user.id, delta=-available, reason="claim"))
 
     status: str
     provider_ref: str | None
@@ -98,7 +102,7 @@ async def claim_coins(payload: ClaimCreate, db: AsyncSession = Depends(get_db)) 
     else:
         try:
             status, provider_ref, notes = await coin_transfer.transfer_coins(
-                user.eaze_user_id, payload.amount
+                user.eaze_user_id, coins
             )
         except RuntimeError as exc:
             status, provider_ref, notes = "failed_provider", None, None
@@ -106,7 +110,8 @@ async def claim_coins(payload: ClaimCreate, db: AsyncSession = Depends(get_db)) 
 
     claim = CoinClaim(
         user_id=user.id,
-        coins_requested=payload.amount,
+        eazescore_claimed=available,
+        coins_requested=coins,
         status=status,
         provider_ref=provider_ref,
         notes=notes,
@@ -118,7 +123,7 @@ async def claim_coins(payload: ClaimCreate, db: AsyncSession = Depends(get_db)) 
 
     if status in ("failed_provider", "identity_unresolved"):
         await coin_transfer.notify_claim_failure(
-            payload.phone, payload.amount, error_message or "unknown error"
+            payload.phone, coins, error_message or "unknown error"
         )
 
     return claim

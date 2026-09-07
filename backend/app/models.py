@@ -93,6 +93,10 @@ class CoinClaim(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    # The full EazeScore balance this claim zeroed out — distinct from
+    # coins_requested since the conversion is no longer 1:1 (see
+    # eaze_score.compute_coins).
+    eazescore_claimed: Mapped[int] = mapped_column(nullable=False)
     coins_requested: Mapped[int] = mapped_column(nullable=False)
     status: Mapped[str] = mapped_column(String(20), nullable=False)
     provider_ref: Mapped[str | None] = mapped_column(String(200), nullable=True)

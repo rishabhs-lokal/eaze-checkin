@@ -61,7 +61,8 @@ class CheckInResult(BaseModel):
 
 class ClaimCreate(BaseModel):
     phone: str = Field(min_length=1, max_length=20)
-    amount: int = Field(gt=0)
+    # No amount — a claim always takes the full available EazeScore balance,
+    # converted via the tiered rate, never a partial user-chosen amount.
 
 
 class ClaimRead(BaseModel):
@@ -69,6 +70,7 @@ class ClaimRead(BaseModel):
 
     id: uuid.UUID
     user_id: uuid.UUID
+    eazescore_claimed: int
     coins_requested: int
     status: str
     provider_ref: str | None

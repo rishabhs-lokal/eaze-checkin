@@ -18,6 +18,27 @@ WELCOME_BONUS = 20
 # cooldown, not a per-calendar-day reset (see next_eligible_at).
 CHECKIN_COOLDOWN = timedelta(hours=3)
 
+# EazeScore -> coin conversion, tiered rather than 1:1. The first
+# HALFWAY_THRESHOLD points of a claim convert at LOW_RATE; anything beyond
+# that converts at HIGH_RATE — a claim always empties the full available
+# balance (see claim_coins in routers/eaze_score.py), never a partial amount,
+# so "available" resets to exactly 0 and starts accumulating fresh from there.
+HALFWAY_THRESHOLD = 250
+LOW_RATE = 0.5
+HIGH_RATE = 1.0
+
+
+def compute_coins(score: int) -> int:
+    """EazeScore -> coins at claim time. Floors to a whole coin so a claim
+    never rounds in the user's favor."""
+    if score <= 0:
+        return 0
+    if score <= HALFWAY_THRESHOLD:
+        coins = score * LOW_RATE
+    else:
+        coins = HALFWAY_THRESHOLD * LOW_RATE + (score - HALFWAY_THRESHOLD) * HIGH_RATE
+    return int(coins)
+
 
 def compute_streak(dates: set[date], as_of: date) -> int:
     """Length of the consecutive run of dates ending at as_of (0 if as_of itself
