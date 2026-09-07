@@ -280,6 +280,7 @@ function scenarioState(key) {
     // Health-app-style multi-day overview.
     chartView: days.length <= 1 ? "day" : "overview",
     chartSelectedDate: days.length ? days[days.length - 1].dateKey : null,
+    chartViewUserSet: false,
   };
 }
 
@@ -342,13 +343,16 @@ function computeStateFromApi(checkIns, scoreState) {
   };
 }
 
-// Picks the chart's starting view exactly once per session (first successful
-// load) — a single day of history goes straight to the drill-down, several
-// days start at the multi-day overview. Later re-fetches (after a save, a
-// tab revisit) leave chartView alone so a user drilled into a day doesn't
-// get yanked back to the overview underneath them.
+// Picks (or re-picks) the chart's view: a single day of history goes
+// straight to the drill-down, several days start at the multi-day overview.
+// Keeps recomputing on every fetch — a user who only had today's entry
+// yesterday and has 4 days of history now should see the overview appear,
+// not stay stuck on day-1 forever. The ONE exception is once the user has
+// manually navigated the chart themselves (drilled into a day, or hit "All
+// days") — chartViewUserSet then latches true and this becomes a no-op, so a
+// background refetch never yanks them out of a day they deliberately opened.
 function ensureChartViewDefault() {
-  if (state.chartView) return;
+  if (state.chartViewUserSet) return;
   const days = groupEntriesByDay(state.checkInEntries);
   if (days.length <= 1) {
     state.chartView = "day";
@@ -439,6 +443,10 @@ const state = {
   chartView: null,
   // Date key ("YYYY-MM-DD", local) the 'day' view is currently drilled into.
   chartSelectedDate: null,
+  // True once the user has manually drilled into a day or hit "All days" —
+  // stops ensureChartViewDefault from auto-managing chartView any further
+  // this session (see its comment).
+  chartViewUserSet: false,
   // Index into that day's entries (from entriesForDay) for the open
   // individual-entry modal, or null when it's closed.
   selectedEntryIdx: null,
@@ -1088,6 +1096,7 @@ function wireCheckinEvents() {
   document.getElementById("chart-back-btn")?.addEventListener("click", () => {
     state.chartView = "overview";
     state.chartSelectedDate = null;
+    state.chartViewUserSet = true;
     render();
   });
 
@@ -1100,6 +1109,7 @@ function wireCheckinEvents() {
       if (!day) return;
       state.chartView = "day";
       state.chartSelectedDate = day.dateKey;
+      state.chartViewUserSet = true;
     } else {
       state.selectedEntryIdx = idx;
     }
