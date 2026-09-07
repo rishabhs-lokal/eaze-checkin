@@ -480,9 +480,14 @@ button.score-label {
   transition: color 0.15s ease;
 }
 
+/* Solid fill + soft glow + a slight scale-up — the same "locked in" feel as
+   a completed streak badge (filled and glowing) rather than just a flat
+   color swap, so picking a mood reads as an achieved state, not a hover. */
 .mood-option.selected .mood-circle {
   background: var(--primary-500);
   border-color: var(--primary-500);
+  transform: scale(1.06);
+  box-shadow: 0 0 0 4px rgba(255, 158, 68, 0.22), 0 4px 16px rgba(255, 158, 68, 0.5);
 }
 
 .mood-option.selected .mood-label { color: var(--white-100); }
