@@ -30,6 +30,14 @@ class Settings(BaseSettings):
     # Failure-only ops notification for claim/transfer errors. Unset -> no-op.
     slack_webhook_url: str | None = None
 
+    # Free-text "Add a note" capture into text_log — OFF by default and must
+    # stay that way until explicitly turned on. Notes are personal, often
+    # sensitive reflections; this flag existing at all is the difference
+    # between "capability is built and ready" and "actually recording
+    # someone's private writing," so it must never default to true. Set
+    # TEXT_LOG_ENABLED=true to turn it on.
+    text_log_enabled: bool = False
+
     # The shared, cross-app EazeScore ledger (eaze-level-up's own backend).
     # host.docker.internal is the local-dev default because this service and
     # eaze-level-up run as two separate docker-compose projects with no

@@ -6,6 +6,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import CheckIn, EazeScoreEvent
 
+# Fixed day-boundary convention for this whole app — "today," streaks, and
+# every check-in's calendar date are all IST, regardless of server or device
+# timezone (matches what the frontend shows users, who are IST-based). Every
+# timestamp in the DB stays stored as naive UTC; IST is only ever applied at
+# the point of deriving a *date* from one, via to_ist_date/ist_today below —
+# never change how created_at itself is stored.
+IST_OFFSET = timedelta(hours=5, minutes=30)
+
 POINTS_PER_CHECKIN = 10
 WEEKLY_STREAK_BONUS = 50
 STREAK_TARGET = 7
@@ -38,6 +46,32 @@ def compute_coins(score: int) -> int:
     else:
         coins = HALFWAY_THRESHOLD * LOW_RATE + (score - HALFWAY_THRESHOLD) * HIGH_RATE
     return int(coins)
+
+
+def to_ist_date(utc_naive: datetime) -> date:
+    """The IST calendar date a naive-UTC timestamp falls on."""
+    return (utc_naive + IST_OFFSET).date()
+
+
+def ist_today(now_utc_naive: datetime | None = None) -> date:
+    """Today's IST calendar date. Pass an explicit naive-UTC `now` (e.g. one
+    already computed by the caller) to avoid a second, possibly-inconsistent
+    clock read within the same request; omit it to read the clock here."""
+    now = now_utc_naive if now_utc_naive is not None else datetime.now(timezone.utc).replace(tzinfo=None)
+    return to_ist_date(now)
+
+
+def ist_midnight_utc(ist_date: date) -> datetime:
+    """The naive-UTC instant corresponding to IST midnight on the given IST
+    date — for range comparisons against created_at (stored naive-UTC)."""
+    return datetime(ist_date.year, ist_date.month, ist_date.day) - IST_OFFSET
+
+
+def ist_now(now_utc_naive: datetime | None = None) -> datetime:
+    """The current instant as an IST wall-clock naive datetime — for
+    splitting into separate (date, time) columns, e.g. login_logs."""
+    now = now_utc_naive if now_utc_naive is not None else datetime.now(timezone.utc).replace(tzinfo=None)
+    return now + IST_OFFSET
 
 
 def compute_streak(dates: set[date], as_of: date) -> int:
@@ -78,8 +112,13 @@ def evaluate_checkin(existing_dates: set[date], today: date) -> tuple[int, bool,
 
 
 async def get_check_in_dates(db: AsyncSession, user_id: uuid.UUID) -> set[date]:
-    result = await db.execute(select(CheckIn.created_at).where(CheckIn.user_id == user_id))
-    return {row[0].date() for row in result.all()}
+    # check_in_date is a DB-generated column (IST calendar date, see the
+    # model) — a plain indexed SELECT DISTINCT instead of pulling every raw
+    # timestamp and converting in Python.
+    result = await db.execute(
+        select(CheckIn.check_in_date).where(CheckIn.user_id == user_id).distinct()
+    )
+    return {row[0] for row in result.all()}
 
 
 async def get_last_checkin_at(db: AsyncSession, user_id: uuid.UUID) -> datetime | None:
@@ -120,10 +159,11 @@ async def get_today_earned(db: AsyncSession, user_id: uuid.UUID) -> int:
     """Sum of today's daily_checkin/streak_bonus events — "today's improvement,"
     shown on the check-in page's EazeScore Daily card. Excludes welcome_bonus,
     which is a one-time home-page event, not a daily one."""
-    # created_at is stored naive (UTC-implied, matching every other date
-    # comparison in this module) — build a naive boundary to match, or
-    # asyncpg rejects comparing an offset-aware value to it.
-    today_start = datetime.combine(datetime.now(timezone.utc).date(), datetime.min.time())
+    # eaze_score_events has no check_in_date column of its own (it's not a
+    # check-in), so "today" is still derived here — via the same IST
+    # boundary as everywhere else, translated back to a naive-UTC instant to
+    # compare against created_at (stored naive-UTC).
+    today_start = ist_midnight_utc(ist_today())
     result = await db.execute(
         select(func.coalesce(func.sum(EazeScoreEvent.delta), 0)).where(
             EazeScoreEvent.user_id == user_id,

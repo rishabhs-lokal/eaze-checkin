@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
@@ -37,7 +37,7 @@ async def get_eaze_score(phone: str, db: AsyncSession = Depends(get_db)) -> Eaze
     today_earned = await eaze_score.get_today_earned(db, user.id)
     last_checkin_at = await eaze_score.get_last_checkin_at(db, user.id)
 
-    today = datetime.now(timezone.utc).date()
+    today = eaze_score.ist_today()
     checked_in_today = today in dates
     streak = eaze_score.compute_streak(dates, today)
     if streak == 0:

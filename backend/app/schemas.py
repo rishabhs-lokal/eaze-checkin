@@ -59,6 +59,10 @@ class CheckInResult(BaseModel):
     streak_bonus_awarded: bool
 
 
+class BannerClickCreate(BaseModel):
+    phone: str = Field(min_length=1, max_length=20)
+
+
 class ClaimCreate(BaseModel):
     phone: str = Field(min_length=1, max_length=20)
     # No amount — a claim always takes the full available EazeScore balance,

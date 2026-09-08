@@ -104,13 +104,6 @@ function pickMessage(value) {
   return options[Math.floor(Math.random() * options.length)];
 }
 
-function dayLabel(offsetFromToday) {
-  if (offsetFromToday === 0) return "Today";
-  const d = new Date();
-  d.setDate(d.getDate() - offsetFromToday);
-  return d.toLocaleDateString(undefined, { weekday: "short" });
-}
-
 // Backend timestamps are stored and serialized as naive UTC (no trailing
 // "Z") — without adding it back, `new Date(...)` would silently reinterpret
 // them as local time instead of UTC, throwing off every hour-based bucket
@@ -120,10 +113,35 @@ function parseUtc(isoStr) {
   return new Date(/[Z]|[+-]\d\d:\d\d$/.test(isoStr) ? isoStr : `${isoStr}Z`);
 }
 
-// Multiple check-ins a day are bucketed by local time of day rather than by
-// weekday — that's the axis a same-day chart actually needs.
+// Fixed +5:30 IST offset — every "which calendar day / what time of day"
+// decision in this app uses IST specifically, regardless of the backend
+// server's or the user's device's own configured timezone (must match
+// backend/app/services/eaze_score.py's IST_OFFSET exactly). Returns a Date
+// whose UTC* getters read as IST wall-clock time — always read this result
+// with getUTCFullYear/getUTCHours/etc, never the plain (device-timezone)
+// getters, or this whole point is defeated.
+const IST_OFFSET_MS = (5 * 60 + 30) * 60 * 1000;
+function toIST(dateObj) {
+  return new Date(dateObj.getTime() + IST_OFFSET_MS);
+}
+
+// "Today" in the fixed-IST sense, as a Date whose UTC* getters read as IST
+// midnight — the reference point dayLabel/daysAgoFromKey measure against.
+function istTodayMidnight() {
+  const ist = toIST(new Date());
+  return new Date(Date.UTC(ist.getUTCFullYear(), ist.getUTCMonth(), ist.getUTCDate()));
+}
+
+function dayLabel(offsetFromToday) {
+  if (offsetFromToday === 0) return "Today";
+  const d = new Date(istTodayMidnight().getTime() - offsetFromToday * 86400000);
+  return d.toLocaleDateString(undefined, { weekday: "short", timeZone: "UTC" });
+}
+
+// Multiple check-ins a day are bucketed by (fixed IST) time of day rather
+// than by weekday — that's the axis a same-day chart actually needs.
 function timeOfDayLabel(dateObj) {
-  const h = dateObj.getHours();
+  const h = toIST(dateObj).getUTCHours();
   if (h >= 5 && h < 12) return "Morning";
   if (h >= 12 && h < 17) return "Afternoon";
   if (h >= 17 && h < 21) return "Evening";
@@ -131,33 +149,39 @@ function timeOfDayLabel(dateObj) {
 }
 
 function shortDateLabel(dateObj) {
-  const now = new Date();
-  const isToday = dateObj.toDateString() === now.toDateString();
+  const ist = toIST(dateObj);
+  const todayMidnight = istTodayMidnight();
+  const isToday =
+    ist.getUTCFullYear() === todayMidnight.getUTCFullYear() &&
+    ist.getUTCMonth() === todayMidnight.getUTCMonth() &&
+    ist.getUTCDate() === todayMidnight.getUTCDate();
   if (isToday) return "Today";
-  return dateObj.toLocaleDateString(undefined, { weekday: "long" });
+  const asUtcMidnight = new Date(Date.UTC(ist.getUTCFullYear(), ist.getUTCMonth(), ist.getUTCDate()));
+  return asUtcMidnight.toLocaleDateString(undefined, { weekday: "long", timeZone: "UTC" });
 }
 
+// Shows the user's own device clock, not IST — "come back at HH:MM" is only
+// useful measured against the clock the user will actually look at.
 function formatClockTime(dateObj) {
   return dateObj.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
 }
 
-// "YYYY-MM-DD" in LOCAL time — the grouping key for the day-level chart view.
-// Deliberately not UTC: a 11pm check-in and a 1am check-in the same local
-// night should land in different day groups exactly the way the user
-// experienced them, which UTC slicing would get wrong near midnight.
+// "YYYY-MM-DD" in fixed IST — the grouping key for the day-level chart view.
+// Deliberately not the browser's own timezone: two devices in different
+// zones must group the same check-in into the same IST calendar day, to
+// match what the backend's streak/"today" logic also uses.
 function localDateKey(dateObj) {
-  const y = dateObj.getFullYear();
-  const m = String(dateObj.getMonth() + 1).padStart(2, "0");
-  const d = String(dateObj.getDate()).padStart(2, "0");
+  const ist = toIST(dateObj);
+  const y = ist.getUTCFullYear();
+  const m = String(ist.getUTCMonth() + 1).padStart(2, "0");
+  const d = String(ist.getUTCDate()).padStart(2, "0");
   return `${y}-${m}-${d}`;
 }
 
 function daysAgoFromKey(dateKey) {
   const [y, m, d] = dateKey.split("-").map(Number);
-  const target = new Date(y, m - 1, d);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  target.setHours(0, 0, 0, 0);
+  const target = Date.UTC(y, m - 1, d);
+  const today = istTodayMidnight().getTime();
   return Math.round((today - target) / 86400000);
 }
 
@@ -307,6 +331,9 @@ async function apiPost(path, body) {
     const errBody = await res.json().catch(() => ({}));
     throw new Error(errBody.detail || `POST ${path} failed: ${res.status}`);
   }
+  // 204 (e.g. /checkins/banner-click) has no body — res.json() would throw
+  // on the empty string.
+  if (res.status === 204) return null;
   return res.json();
 }
 
@@ -1137,7 +1164,14 @@ function wireHomeEvents() {
     // fetch below lands.
     state.selectedMood = null;
     render();
-    if (!state.isTester && state.phone) loadRealUserData(state.phone);
+    if (!state.isTester && state.phone) {
+      loadRealUserData(state.phone);
+      // Fire-and-forget — logs this banner tap (see CheckinBannerLog on the
+      // backend); never blocks or fails the navigation it's tracking.
+      apiPost("/checkins/banner-click", { phone: state.phone }).catch((err) => {
+        console.error("Failed to log banner click", err);
+      });
+    }
   });
 }
 

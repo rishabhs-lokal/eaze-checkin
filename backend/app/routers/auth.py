@@ -1,9 +1,11 @@
 from fastapi import APIRouter, Depends
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
-from app.models import User
+from app.models import LoginLog, User
 from app.schemas import LoginRequest, UserRead
+from app.services import eaze_score
 from app.services.users import get_or_create_user
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -32,4 +34,20 @@ async def login(payload: LoginRequest, db: AsyncSession = Depends(get_db)) -> Us
         user.eaze_user_id = payload.eaze_user_id
     await db.commit()
     await db.refresh(user)
+
+    # First-login-only record (see LoginLog) — check-then-insert, not an
+    # upsert: this must never be overwritten after the very first login.
+    existing_log = await db.execute(select(LoginLog).where(LoginLog.user_id == user.id))
+    if existing_log.scalar_one_or_none() is None:
+        ist_instant = eaze_score.ist_now()
+        db.add(
+            LoginLog(
+                user_id=user.id,
+                phone_number=payload.phone,
+                first_login_date=ist_instant.date(),
+                first_login_time=ist_instant.time(),
+            )
+        )
+        await db.commit()
+
     return user
