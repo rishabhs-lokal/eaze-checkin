@@ -33,16 +33,3 @@ async def transfer_coins(eaze_user_id: str, amount: int) -> tuple[str, str | Non
         raise RuntimeError(f"Eaze Coins API returned {response.status_code}: {response.text}")
 
     return "submitted", eaze_user_id, response.text
-
-
-async def notify_claim_failure(phone: str, amount: int, reason: str) -> None:
-    """Failure-only ops notification — success is silent by design."""
-    settings = get_settings()
-    if not settings.slack_webhook_url:
-        return
-    text = f":x: EazeScore claim failed\nPhone: {phone}\nAmount: {amount}\nReason: {reason}"
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            await client.post(settings.slack_webhook_url, json={"text": text})
-    except httpx.HTTPError:
-        pass

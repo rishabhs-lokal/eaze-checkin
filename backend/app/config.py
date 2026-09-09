@@ -27,10 +27,7 @@ class Settings(BaseSettings):
     eaze_coins_auth_key: str | None = None
     eaze_coins_api_url: str = "https://api.eazeapp.com/payments/free-coins/upload/"
 
-    # Failure-only ops notification for claim/transfer errors. Unset -> no-op.
-    slack_webhook_url: str | None = None
-
-    # Engagement-only logging of the "Add a note" field into text_log — only
+# Engagement-only logging of the "Add a note" field into text_log — only
     # records whether a note was written (yes/no), never its text, so this is
     # safe to leave on by default. Set TEXT_LOG_ENABLED=false to turn it off.
     text_log_enabled: bool = True

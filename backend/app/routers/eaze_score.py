@@ -121,9 +121,4 @@ async def claim_coins(payload: ClaimCreate, db: AsyncSession = Depends(get_db)) 
     await db.commit()
     await db.refresh(claim)
 
-    if status in ("failed_provider", "identity_unresolved"):
-        await coin_transfer.notify_claim_failure(
-            payload.phone, coins, error_message or "unknown error"
-        )
-
     return claim
