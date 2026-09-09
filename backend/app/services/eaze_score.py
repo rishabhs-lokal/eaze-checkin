@@ -37,15 +37,18 @@ HIGH_RATE = 1.0
 
 
 def compute_coins(score: int) -> int:
-    """EazeScore -> coins at claim time. Floors to a whole coin so a claim
-    never rounds in the user's favor."""
+    """EazeScore -> coins at claim time. Rounds half up to a whole coin (e.g.
+    an odd score at the 0.5 rate lands on a X.5 coin value, which rounds up,
+    not down) — int(x + 0.5) rather than round(), since Python's round()
+    banker's-rounds X.5 to the nearest *even* int, which would round some
+    X.5 values down."""
     if score <= 0:
         return 0
     if score <= HALFWAY_THRESHOLD:
         coins = score * LOW_RATE
     else:
         coins = HALFWAY_THRESHOLD * LOW_RATE + (score - HALFWAY_THRESHOLD) * HIGH_RATE
-    return int(coins)
+    return int(coins + 0.5)
 
 
 def to_ist_date(utc_naive: datetime) -> date:

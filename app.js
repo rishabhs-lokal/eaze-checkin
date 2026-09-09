@@ -326,7 +326,9 @@ function computeCoins(score) {
     score <= COIN_HALFWAY_THRESHOLD
       ? score * COIN_LOW_RATE
       : COIN_HALFWAY_THRESHOLD * COIN_LOW_RATE + (score - COIN_HALFWAY_THRESHOLD) * COIN_HIGH_RATE;
-  return Math.floor(coins);
+  // Round half up (an odd score at the 0.5 rate lands on X.5 coins, which
+  // rounds up, not down) — mirrors the backend's compute_coins exactly.
+  return Math.floor(coins + 0.5);
 }
 
 function scenarioState(key) {
@@ -814,6 +816,25 @@ function homeInfoModal() {
   `;
 }
 
+// Replaces the old inline "Welcome bonus" banner — same confetti burst as a
+// successful coin claim (see claimModal's result view / spawnConfetti), so
+// the first-ever +20 reads as a celebrated moment instead of a static strip
+// of text sitting under the header.
+function welcomeBonusModal() {
+  return `
+    <div id="welcome-bonus-overlay" class="day-detail-overlay">
+      <div class="day-detail-modal rules-modal">
+        <button id="welcome-bonus-close" class="day-detail-close" type="button" aria-label="Close">✕</button>
+        <div class="claim-confetti" id="welcome-bonus-confetti"></div>
+        <img src="${EAZE_LOGO_WHITE_SRC}" alt="" class="home-info-icon" />
+        <p class="day-detail-day">Welcome bonus</p>
+        <p class="claim-result-coins">+20 added to your EazeScore</p>
+        <button id="welcome-bonus-done" class="home-info-cta" type="button">Let's go</button>
+      </div>
+    </div>
+  `;
+}
+
 // Claim modal — always the explainer/breakdown view first (so the
 // conversion mechanism is seen before every claim, not just the first one),
 // then swaps to a result view once handleClaimSubmit resolves.
@@ -909,7 +930,7 @@ function homePage() {
         <div class="header-row">
           <div>
             <p class="eyebrow">EazeScore</p>
-            <h1 class="headline">Your EazeScore</h1>
+            <h1 class="headline">Your EazeScore Lifetime</h1>
           </div>
           <div class="eaze-logo" aria-label="Eaze">
             <img src="${EAZE_LOGO_WHITE_SRC}" alt="Eaze" width="44" height="44" />
@@ -917,19 +938,19 @@ function homePage() {
         </div>
       </header>
 
-      ${
-        state.welcomeBonusJustAwarded
-          ? `<p class="welcome-bonus-banner" id="welcome-bonus-banner">Welcome bonus — +20 added to your EazeScore</p>`
-          : ""
-      }
-
       <div class="home-stats-row">
         <button class="card stat-card" id="score-card" type="button" aria-haspopup="dialog">
-          <span class="stat-card-head"><img src="${EAZE_LOGO_WHITE_SRC}" alt="" class="score-icon" /> EazeScore</span>
+          <span class="stat-card-header">
+            <span class="stat-card-head"><img src="${EAZE_LOGO_WHITE_SRC}" alt="" class="score-icon" /> EazeScore<span class="score-label-hint" aria-hidden="true">?</span></span>
+            <svg class="stat-card-chevron" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </span>
           <span class="stat-card-value" id="score-value">0</span>
         </button>
         <button class="card stat-card" id="sessions-card" type="button" aria-haspopup="dialog">
-          <span class="stat-card-head">Sessions completed</span>
+          <span class="stat-card-header">
+            <span class="stat-card-head">Sessions completed<span class="score-label-hint" aria-hidden="true">?</span></span>
+            <svg class="stat-card-chevron" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </span>
           <span class="stat-card-value" id="sessions-value">${state.sessionsCount}</span>
         </button>
       </div>
@@ -1170,7 +1191,8 @@ function render() {
       homePage() +
       (state.showTestModal ? testModeModal() : "") +
       (state.homeInfoModal ? homeInfoModal() : "") +
-      (state.showClaimModal ? claimModal() : "");
+      (state.showClaimModal ? claimModal() : "") +
+      (state.welcomeBonusJustAwarded ? welcomeBonusModal() : "");
     queryEls();
     wireHomeEvents();
     if (state.isTester) wireTesterToolbar();
@@ -1178,6 +1200,10 @@ function render() {
     if (state.homeInfoModal) wireHomeInfoModal();
     if (state.showClaimModal) wireClaimModal();
     if (state.claimResult?.ok) spawnConfetti();
+    if (state.welcomeBonusJustAwarded) {
+      wireWelcomeBonusModal();
+      spawnConfetti("welcome-bonus-confetti");
+    }
     renderHome();
     if (inCooldown()) {
       homeCooldownTimer = setInterval(() => {
@@ -1444,7 +1470,11 @@ function wireCheckinEvents() {
     if (!state.isTester && state.phone) loadHomeData(state.phone);
   });
 
-  document.getElementById("daily-rules-btn")?.addEventListener("click", () => {
+  // Whole card is the click target, not just the inner label — the inner
+  // "EazeScore Daily" button stays as the focusable/keyboard-accessible
+  // element (its own click still bubbles up here), but tapping the number
+  // or caption anywhere else on the card now opens the same popup.
+  document.getElementById("score-card")?.addEventListener("click", () => {
     state.showRulesModal = true;
     render();
   });
@@ -1549,6 +1579,21 @@ function wireHomeInfoModal() {
   });
 }
 
+// ---------- Welcome bonus modal wiring ----------
+function closeWelcomeBonusModal() {
+  state.welcomeBonusJustAwarded = false;
+  render();
+}
+
+function wireWelcomeBonusModal() {
+  document.getElementById("welcome-bonus-overlay")?.addEventListener("click", (e) => {
+    if (e.target.id !== "welcome-bonus-overlay") return;
+    closeWelcomeBonusModal();
+  });
+  document.getElementById("welcome-bonus-close")?.addEventListener("click", closeWelcomeBonusModal);
+  document.getElementById("welcome-bonus-done")?.addEventListener("click", closeWelcomeBonusModal);
+}
+
 // ---------- Claim modal wiring ----------
 function closeClaimModal() {
   state.showClaimModal = false;
@@ -1569,11 +1614,12 @@ function wireClaimModal() {
 const CONFETTI_COLORS = ["var(--primary-500)", "var(--primary-200)", "var(--success-500)", "var(--secondary-200)", "var(--white-100)"];
 const CONFETTI_PIECE_COUNT = 26;
 
-// Fires once per successful claim render (see the render() dispatcher) —
-// generates fresh pieces every time rather than reusing a cached template,
-// so the burst looks a little different on every claim.
-function spawnConfetti() {
-  const container = document.getElementById("claim-confetti");
+// Fires once per successful claim render, and once for the welcome-bonus
+// popup (see the render() dispatcher) — generates fresh pieces every time
+// rather than reusing a cached template, so the burst looks a little
+// different on every claim.
+function spawnConfetti(containerId = "claim-confetti") {
+  const container = document.getElementById(containerId);
   if (!container) return;
   const frag = document.createDocumentFragment();
   for (let i = 0; i < CONFETTI_PIECE_COUNT; i++) {
@@ -1706,8 +1752,10 @@ function renderMoodPicker() {
     const btn = document.createElement("button");
     btn.type = "button";
     const isSelected = state.selectedMood === mood.value;
-    // Dimming tracks selection, not save/lock-in — the moment any mood is
-    // picked the other four dull, whether or not Save has been tapped yet.
+    // At rest (nothing picked yet) every option stays at full, inviting
+    // brightness — dimming only kicks in once a mood IS picked, to fade the
+    // other four out. A dimmed resting state read as "disabled" and killed
+    // engagement before the user ever tapped anything.
     btn.className =
       "mood-option" + (isSelected ? " selected" : "") + (hasSelection && !isSelected ? " dimmed" : "");
     btn.setAttribute("role", "radio");

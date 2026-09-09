@@ -161,8 +161,14 @@ body {
 
 /* Check-in page only — with the eyebrow gone and the logo sharing the same
    line (see .header-row--centered), the full question needs to fit on one
-   line at the space actually available next to the logo, not wrap to 3. */
+   line at the space actually available next to the logo, not wrap to 3.
+   Also drops the base .headline's display-face variation-settings so this
+   reads in the same plain face as the rest of the check-in page — same
+   treatment as .section-label ("Mood Over Time", "Your Streak"), not the
+   rounder "hero number" face used on the home page's headline. */
 .headline--compact {
+  font-family: var(--font-ui);
+  font-variation-settings: normal;
   font-size: 19px;
   line-height: 24px;
   white-space: nowrap;
@@ -249,7 +255,13 @@ body {
   padding: 18px;
   background: var(--card-fill);
   border: 1px solid var(--white-40);
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: border-color 0.15s ease, transform 0.1s ease;
 }
+
+.score-card:hover { border-color: var(--white-40); }
+.score-card:active { transform: scale(0.99); }
 
 .score-header {
   display: flex;
@@ -300,14 +312,15 @@ button.score-label {
   border-radius: 5px;
 }
 
-/* Matches .stat-card-value / .claim-card-value — one shared "hero number"
-   size across every score/coin card in the app. */
+/* Same size as .stat-card-value / .claim-card-value, but the plain UI face
+   (var(--font-ui), no variation-settings) — matches the rest of the
+   check-in page's text (e.g. .section-label's "Mood Over Time"), unlike the
+   rounder "hero number" face those home-page cards use. */
 .score-value {
   display: block;
   text-align: center;
-  font-family: var(--font-display);
+  font-family: var(--font-ui);
   font-weight: 600;
-  font-variation-settings: "opsz" 144, "SOFT" 100;
   font-size: 40px;
   line-height: 44px;
   color: var(--white-100);
@@ -421,6 +434,11 @@ button.score-label {
 }
 
 .mood-option:hover .mood-circle { border-color: var(--white-40); }
+
+/* Quick tactile press feedback — same scale-down language as the home
+   page's tappable cards — so each option reads as a live control the
+   instant it's touched, not a flat static icon. */
+.mood-option:active .mood-circle { transform: scale(0.9); }
 
 /* filter (not color/opacity) is what actually brightens or dims an emoji
    glyph — color has no effect on emoji rendering. Every mood stays boosted
@@ -1209,25 +1227,10 @@ button.score-label {
   color: var(--white-80);
 }
 
-.welcome-bonus-banner {
-  margin: 0 0 16px;
-  padding: 12px 16px;
-  border-radius: 12px;
-  border: 1px solid var(--success-500);
-  background: var(--white-10);
-  color: var(--success-500);
-  font-size: 14px;
-  line-height: 20px;
-  font-weight: 700;
-  text-align: center;
-  animation: fadeInUp 0.4s ease;
-}
-
 /* Two tappable stat cards sharing the home page's first row — EazeScore on
    the left, sessions completed on the right, each roughly half the row's
-   width. min-height is ~25% taller than a plain heading+number card would
-   naturally be, so the pair reads as a deliberate "hero stat" block instead
-   of a cramped default. */
+   width. Height is 0.67x a plain hero-stat card (same width) so the pair
+   reads as compact at-a-glance tiles rather than a dominant block. */
 .home-stats-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -1238,9 +1241,8 @@ button.score-label {
 .stat-card {
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
-  align-items: flex-start;
-  min-height: 210px;
+  align-items: stretch;
+  min-height: 140px;
   text-align: left;
   font-family: inherit;
   cursor: pointer;
@@ -1256,6 +1258,13 @@ button.score-label {
   outline-offset: 2px;
 }
 
+.stat-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+
 .stat-card-head {
   display: inline-flex;
   align-items: center;
@@ -1266,7 +1275,22 @@ button.score-label {
   color: var(--white-100);
 }
 
+/* Signals the whole tile is tappable, matching the claim card's chevron. */
+.stat-card-chevron {
+  width: 18px;
+  height: 18px;
+  color: var(--white-80);
+  flex-shrink: 0;
+}
+
+/* Grows to fill the remaining height below the header row, centering the
+   number both horizontally and vertically in that space. */
 .stat-card-value {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
   font-family: var(--font-display);
   font-weight: 600;
   font-variation-settings: "opsz" 144, "SOFT" 100;
@@ -1278,24 +1302,23 @@ button.score-label {
 /* Whole card is the one click target (navigates to check-in) — the
    "Check in now" pill inside is a plain span, not a nested button, so
    there's exactly one interactive element here, not two competing ones.
-   Grey-to-orange diagonal gradient (both real tokens: --bg and
-   --primary-500, no invented colors) makes this one card visually distinct
-   from the plain dark cards around it — it's the primary action on the
-   page. Content is a centered column, not a left-aligned row, so the whole
-   card reads as one centered block on its own line. */
+   Same flat --card-fill as every other card on the page, so this reads as
+   part of the set rather than a standalone banner. Content is a centered
+   column, not a left-aligned row, so the whole card reads as one centered
+   block on its own line. */
 .home-banner {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 12px;
+  gap: 10px;
   width: 100%;
-  min-height: 168px;
+  min-height: 118px;
   margin-bottom: 16px;
-  padding: 24px;
+  padding: 16px;
   border-radius: 20px;
   border: 1px solid var(--white-40);
-  background: linear-gradient(135deg, var(--bg) 0%, var(--primary-500) 100%);
+  background: var(--card-fill);
   cursor: pointer;
   touch-action: manipulation;
   text-align: center;
@@ -1305,12 +1328,9 @@ button.score-label {
 .home-banner:hover { border-color: var(--white-40); }
 .home-banner:active { opacity: 0.85; }
 
-/* Darkened, inactive state — shown while the check-in cooldown is running
-   (see inCooldown() / state.nextCheckinAt in app.js). Same flat dark fill
-   as every other resting card, in place of the vivid gradient, so "not
-   available right now" reads at a glance. */
+/* Cooldown state only needs to swap in the disabled cursor now — the
+   background already matches the resting state above. */
 .home-banner--cooldown {
-  background: var(--card-fill);
   cursor: not-allowed;
 }
 
@@ -1343,7 +1363,7 @@ button.score-label {
 }
 
 .home-banner-accent {
-  color: var(--bg);
+  color: var(--primary-500);
 }
 
 .home-banner-cta {
@@ -1370,7 +1390,7 @@ button.score-label {
 /* Bare glyph, no rounded/colored container behind it — an emoji-in-a-circle
    reads as decoration, this is standing in for a real icon instead. */
 .home-banner-emoji {
-  font-size: 44px;
+  font-size: 34px;
   line-height: 1;
   flex-shrink: 0;
 }
@@ -1397,8 +1417,12 @@ button.score-label {
 }
 
 /* ================= Claim coins card ================= */
-/* Same dark card-fill + border as every other card on this page now. */
+/* Same dark card-fill + border as every other card on this page now.
+   position:relative + overflow:hidden give the ::before coin watermark a
+   bounded box to sit in behind the text. */
 .claim-card {
+  position: relative;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -1422,7 +1446,28 @@ button.score-label {
   outline-offset: 2px;
 }
 
+/* Large coin graphic bleeding off the bottom-right corner — reads as a
+   watermark, not a competing visual element, but bright enough to actually
+   register at a glance. Sits behind the text (z-index: 0), which is why
+   the header/value/caption below are each lifted to z-index: 1. */
+.claim-card::before {
+  content: "";
+  position: absolute;
+  right: -14px;
+  bottom: -14px;
+  width: 150px;
+  height: 150px;
+  background-image: url("assets/eaze-coin.png?v=1");
+  background-repeat: no-repeat;
+  background-size: contain;
+  opacity: 0.4;
+  z-index: 0;
+  pointer-events: none;
+}
+
 .claim-card-header {
+  position: relative;
+  z-index: 1;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1458,6 +1503,8 @@ button.score-label {
    EazeScore, Sessions completed, and Claim coins cards, not three different
    scales fighting for hierarchy. */
 .claim-card-value {
+  position: relative;
+  z-index: 1;
   font-family: var(--font-display);
   font-weight: 600;
   font-variation-settings: "opsz" 144, "SOFT" 100;
@@ -1467,6 +1514,8 @@ button.score-label {
 }
 
 .claim-card-caption {
+  position: relative;
+  z-index: 1;
   font-size: 12px;
   line-height: 16px;
   color: var(--white-80);
