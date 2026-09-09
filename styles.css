@@ -888,14 +888,6 @@ button.score-label {
   text-align: center;
 }
 
-.login-hint {
-  margin: 18px 0 0;
-  font-size: 12px;
-  line-height: 16px;
-  color: var(--white-40);
-  text-align: center;
-}
-
 /* ================= Country bottom sheet ================= */
 .sheet-overlay {
   position: fixed;
@@ -977,84 +969,6 @@ button.score-label {
 .country-option-flag { font-size: 18px; }
 .country-option-name { font-size: 14px; line-height: 20px; font-weight: 400; }
 
-/* ================= Tester mode modal ================= */
-.test-modal-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 60;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 16px;
-  background: rgba(0, 0, 0, 0.75);
-}
-
-.test-modal {
-  width: 100%;
-  max-width: 380px;
-  background: var(--bg);
-  border: 1px solid var(--white-20);
-  border-radius: 20px;
-  padding: 22px;
-  box-shadow: var(--shadow-overlay);
-  animation: fadeInUp 0.25s ease;
-}
-
-.test-modal-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 6px;
-}
-
-.test-modal-title-icon {
-  width: 18px;
-  height: 18px;
-  color: var(--primary-500);
-  flex-shrink: 0;
-}
-
-.test-modal-title h2 {
-  margin: 0;
-  font-size: 16px;
-  line-height: 20px;
-  font-weight: 700;
-  color: var(--white-100);
-}
-
-.test-modal-subtitle {
-  margin: 0 0 18px;
-  font-size: 12px;
-  line-height: 16px;
-  color: var(--white-60);
-}
-
-.test-modal-options {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.test-option {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  padding: 12px 14px;
-  border-radius: 12px;
-  border: 1px solid var(--white-20);
-  background: var(--white-10);
-  text-align: left;
-  cursor: pointer;
-  touch-action: manipulation;
-  color: var(--white-100);
-  transition: border-color 0.15s ease;
-}
-
-.test-option:hover { border-color: var(--primary-200); }
-
-.test-option-label { font-size: 14px; line-height: 20px; font-weight: 700; }
-.test-option-desc { font-size: 12px; line-height: 16px; color: var(--white-60); }
-
 /* ================= Day detail modal ================= */
 .chart-point { cursor: pointer; touch-action: manipulation; }
 .chart-point:active circle { opacity: 0.8; }
@@ -1123,72 +1037,6 @@ button.score-label {
   font-size: 14px;
   line-height: 21px;
   color: var(--white-80);
-}
-
-/* ================= Tester toolbar ================= */
-.tester-toolbar {
-  max-width: 720px;
-  margin: 0 auto;
-  padding: 10px 16px 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.tester-toolbar-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-  border: 1px solid var(--primary-500);
-  background: var(--white-10);
-  border-radius: 12px;
-  padding: 8px 12px;
-}
-
-.tester-badge { font-size: 12px; line-height: 16px; font-weight: 700; color: var(--white-60); }
-
-.tester-link-btn {
-  border: none;
-  background: transparent;
-  font-size: 12px;
-  line-height: 16px;
-  font-weight: 400;
-  color: var(--white-60);
-  text-decoration: underline;
-  cursor: pointer;
-  padding: 0;
-  touch-action: manipulation;
-}
-
-.tester-sim-label { font-size: 12px; color: var(--white-50); }
-
-.tester-sim-input {
-  width: 52px;
-  border-radius: 12px;
-  border: 1px solid var(--white-20);
-  background: var(--white-10);
-  color: var(--white-100);
-  font-size: 12px;
-  padding: 4px 8px;
-  outline: none;
-}
-
-.tester-mini-btn {
-  border-radius: 12px;
-  border: 1px solid var(--white-20);
-  background: var(--white-10);
-  color: var(--white-70);
-  font-size: 12px;
-  font-weight: 700;
-  padding: 4px 10px;
-  cursor: pointer;
-  touch-action: manipulation;
-}
-
-.tester-mini-btn--set {
-  border-color: var(--primary-500);
-  color: var(--white-100);
 }
 
 .logout-link {

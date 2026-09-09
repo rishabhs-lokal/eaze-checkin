@@ -1,12 +1,9 @@
 // Daily Check-in — Eaze
-// Login + tester-mode scenario system, modeled on the actual Dostt Free
-// Rewards app (root.innerHTML render loop, animated login button, country
-// bottom sheet, test-phone -> scenario picker, persistent tester toolbar with
-// live overrides) and reskinned with the Eaze design tokens.
-// Real users hit the backend in backend/ (see "Real backend integration"
-// below) — EazeScore and check-in history persist for real. Testers stay on
-// the local scenario simulator and never touch the real API, so QA/demo data
-// can never pollute a real account.
+// Login, modeled on the actual Dostt Free Rewards app (root.innerHTML render
+// loop, animated login button, country bottom sheet) and reskinned with the
+// Eaze design tokens. Every user hits the real backend in backend/ (see
+// "Real backend integration" below) — EazeScore and check-in history
+// persist for real.
 
 const MOODS = [
   { value: 1, emoji: "😞", label: "Rough" },
@@ -72,18 +69,6 @@ const COUNTRIES = [
   { flag: "🇺🇸", name: "United States", code: "+1" },
 ];
 
-// Tester mode (the toolbar, scenario simulator, and the tester-number bypass
-// below) only ever unlocks on localhost or a staging-looking host. Anywhere
-// else — a real production domain — this is false and the tester phone
-// number does nothing, so it can never be typed into the live app to
-// unlock the simulator or skip the real backend. Allowlisted, not
-// blocklisted: an unrecognized host defaults to "production" (disabled),
-// which is the safe failure direction here.
-const TESTER_MODE_ENABLED =
-  ["localhost", "127.0.0.1"].includes(window.location.hostname) ||
-  window.location.hostname.includes("staging");
-
-const TEST_PHONES = TESTER_MODE_ENABLED ? ["9999999999"] : [];
 const EAZE_LOGO_SRC = "assets/eaze-logo.png?v=3";
 const EAZE_LOGO_WHITE_SRC = "assets/eaze-logo-white.png?v=1";
 const EAZE_COIN_SRC = "assets/eaze-coin.png?v=1";
@@ -101,8 +86,6 @@ const ICONS = {
     '<svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M12 3c1.2 2.4 3.6 3.9 3.6 7.2a3.6 3.6 0 0 1-1.2 2.7c1.8-.3 3-1.8 3-3.9 1.5 1.8 2.4 3.9 2.4 6 0 3.6-3 6-7.8 6S4.2 19.6 4.2 16c0-4.2 3-6.6 4.8-9.6.3 1.8 1.5 3 1.5 3S9 6.6 12 3Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>',
   trend:
     '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 16l5-5 4 4 7-8" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/><path d="M15 7h4v4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>',
-  flask:
-    '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M9 3h6M10 3v5.5L5.5 17a2 2 0 0 0 1.8 3h9.4a2 2 0 0 0 1.8-3L14 8.5V3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>',
   backArrow:
     '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" width="14" height="14" style="vertical-align:-2px"><path d="M15 6l-6 6 6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
 };
@@ -239,10 +222,6 @@ function entriesForDay(entries, dateKey) {
   return entries.filter((e) => localDateKey(e.at) === dateKey).sort((a, b) => a.at - b.at);
 }
 
-// ---------- Tester scenarios ----------
-// Mirrors the reference app's api / direct_select / bypass / real tester
-// modes: pick a scenario from a modal, get preset data, tweak it live from a
-// persistent toolbar — reworked here around streak/mood data instead of spend.
 function buildStreakDays(pastCount) {
   // Filled days occupy the leftmost circles (0..n-1) with no gap before them.
   // Today's still-pending check-in isn't one of these — it's whichever slot
@@ -258,56 +237,6 @@ function buildFilledStreakDays(filledCount) {
   const n = Math.max(0, Math.min(7, filledCount));
   return Array.from({ length: 7 }, (_, i) => i < n);
 }
-
-// Spreads the scenario's 7 seed values across the last 4 calendar days (2-2-1-2
-// entries), at varied times of day, so testers see the same two-level chart a
-// real multiple-check-ins-a-day user would: a multi-day overview, and a
-// same-day drill-down with several time-of-day points.
-const SEED_DAY_OFFSETS = [3, 3, 2, 2, 1, 0, 0];
-const SEED_HOURS = [9, 19, 10, 20, 14, 8, 20];
-
-function buildCheckInEntries(seedValues) {
-  // Whether there's history to show is a property of the scenario (has this
-  // person ever logged a mood?), not of the current streak count — a broken
-  // streak still has a past, it just isn't consecutive up to today.
-  if (!seedValues || !seedValues.length) return [];
-  const now = new Date();
-  return seedValues
-    .map((value, i) => {
-      const at = new Date(now);
-      at.setDate(at.getDate() - SEED_DAY_OFFSETS[i % SEED_DAY_OFFSETS.length]);
-      at.setHours(SEED_HOURS[i % SEED_HOURS.length], 0, 0, 0);
-      return { value, at, message: pickMessage(value) };
-    })
-    .sort((a, b) => a.at - b.at);
-}
-
-const SCENARIOS = {
-  fresh: {
-    label: "Fresh Start",
-    desc: "Brand new user · no streak, no mood history yet",
-    streakCount: 0,
-    moodValues: [],
-  },
-  active: {
-    label: "Active Streak",
-    desc: "3-day streak · a week of mood history (default)",
-    streakCount: 3,
-    moodValues: [3, 4, 3, 5, 4, 4, 5],
-  },
-  full: {
-    label: "Full Week",
-    desc: "6-day streak · one check-in away from a full week",
-    streakCount: 6,
-    moodValues: [4, 4, 5, 4, 5, 5, 4],
-  },
-  broken: {
-    label: "Broken Streak",
-    desc: "Streak just reset to 0 · rougher recent moods",
-    streakCount: 0,
-    moodValues: [4, 3, 2, 3, 2, 3, 2],
-  },
-};
 
 const POINTS_PER_CHECKIN = 10;
 const WEEKLY_STREAK_BONUS = 50;
@@ -331,33 +260,10 @@ function computeCoins(score) {
   return Math.floor(coins + 0.5);
 }
 
-function scenarioState(key) {
-  const s = SCENARIOS[key] || SCENARIOS.active;
-  const checkInEntries = buildCheckInEntries(s.moodValues);
-  const days = groupEntriesByDay(checkInEntries);
-  return {
-    checkInEntries,
-    streakDays: buildStreakDays(s.streakCount),
-    // 10 points per day of the current streak — a 3-day streak is 30 points,
-    // full stop. Mood history is a separate concept (the last 7 calendar
-    // days, whether or not they're consecutive) and doesn't factor in here.
-    eazeScore: s.streakCount * POINTS_PER_CHECKIN,
-    lastBonusAwarded: false,
-    // One day of history or less -> skip straight to the drill-down view (a
-    // single-dot "overview" isn't useful); several days -> start at the
-    // Health-app-style multi-day overview.
-    chartView: days.length <= 1 ? "day" : "overview",
-    chartSelectedDate: days.length ? days[days.length - 1].dateKey : null,
-    chartViewUserSet: false,
-  };
-}
-
 // ---------- Real backend integration ----------
-// Testers are unaffected by any of this — they stay on the local scenario
-// simulator above. Non-tester users hit the actual API so EazeScore and
-// check-in history survive a refresh instead of resetting to scripted demo
-// data every load.
-const API_BASE = "http://localhost:8000";
+// Every user hits the actual API so EazeScore and check-in history survive
+// a refresh instead of resetting to scripted demo data every load.
+const API_BASE = "https://eaze-eaze-checkin.eazeapp.com";
 
 async function apiGet(path) {
   const res = await fetch(`${API_BASE}${path}`);
@@ -386,12 +292,10 @@ async function apiPost(path, body) {
 // unbounded growth for a very long-term, very frequent user.
 const RAW_ENTRIES_CAP = 90;
 
-// Maps the API's raw check-in list + score state into this app's existing
-// UI shape (checkInEntries / streakDays / checkedInToday / nextCheckinAt /
-// eazeScore) — same shape scenarioState() produces, so rendering code
-// doesn't need to know whether the data came from a scenario or the real
-// backend. Does NOT set chartView/chartSelectedDate — callers decide whether
-// to compute a fresh default or preserve whatever the user is browsing (see
+// Maps the API's raw check-in list + score state into this app's UI shape
+// (checkInEntries / streakDays / checkedInToday / nextCheckinAt / eazeScore).
+// Does NOT set chartView/chartSelectedDate — callers decide whether to
+// compute a fresh default or preserve whatever the user is browsing (see
 // ensureChartViewDefault).
 function computeStateFromApi(checkIns, scoreState) {
   const checkInEntries = [...checkIns]
@@ -505,17 +409,13 @@ const state = {
   showCountrySheet: false,
   countrySearch: "",
 
-  isTester: false,
-  testMode: null,
-  showTestModal: false,
-
   // Raw check-in entries ({ value, at: Date, message }), oldest to newest —
   // the single source both chart views (multi-day overview and single-day
   // drill-down) derive from.
   checkInEntries: [],
   // 'overview' (one averaged point per day) or 'day' (every entry on one
   // specific day) — see ensureChartViewDefault for how the initial value is
-  // chosen. Null until the first real fetch (or tester scenario) resolves.
+  // chosen. Null until the first real fetch resolves.
   chartView: null,
   // Date key ("YYYY-MM-DD", local) the 'day' view is currently drilled into.
   chartSelectedDate: null,
@@ -578,23 +478,10 @@ const state = {
   } catch {
     return;
   }
-  state.isTester = TEST_PHONES.includes(state.phone);
-  if (state.isTester) {
-    const savedMode = localStorage.getItem("checkin_testMode");
-    if (savedMode && SCENARIOS[savedMode]) {
-      state.testMode = savedMode;
-      Object.assign(state, scenarioState(savedMode));
-      state.view = "checkin";
-    } else {
-      state.showTestModal = true;
-    }
-  } else {
-    // Real user: land on the EazeScore home page every time, same as right
-    // after login — show the clean/zeroed shell immediately, then fetch
-    // actual persisted data below (after the initial render() at the bottom
-    // of this file). No more scripted demo scores.
-    state.view = "home";
-  }
+  // Land on the EazeScore home page every time, same as right after login —
+  // show the clean/zeroed shell immediately, then fetch actual persisted
+  // data below (after the initial render() at the bottom of this file).
+  state.view = "home";
 })();
 
 const root = document.getElementById("root");
@@ -662,8 +549,6 @@ function loginPage() {
           </button>
         </div>
         <p class="login-error" id="login-error"></p>
-
-        ${TESTER_MODE_ENABLED ? `<p class="login-hint">Tester number: ${TEST_PHONES[0]}</p>` : ""}
       </div>
     </div>
     ${state.showCountrySheet ? countrySheet() : ""}
@@ -693,28 +578,6 @@ function countrySheet() {
           </button>`
           )
           .join("")}
-      </div>
-    </div>
-  `;
-}
-
-function testModeModal() {
-  return `
-    <div id="test-modal-overlay" class="test-modal-overlay">
-      <div class="test-modal">
-        <div class="test-modal-title"><span class="test-modal-title-icon">${ICONS.flask}</span><h2>Tester Mode</h2></div>
-        <p class="test-modal-subtitle">You're logged in with a test number. Choose a scenario to preview:</p>
-        <div class="test-modal-options">
-          ${Object.entries(SCENARIOS)
-            .map(
-              ([key, s]) => `
-            <button class="test-option" data-scenario="${key}" type="button">
-              <span class="test-option-label">${s.label}</span>
-              <span class="test-option-desc">${s.desc}</span>
-            </button>`
-            )
-            .join("")}
-        </div>
       </div>
     </div>
   `;
@@ -904,28 +767,8 @@ function claimModal() {
   `;
 }
 
-function testerToolbar() {
-  const scenario = SCENARIOS[state.testMode] || SCENARIOS.active;
-  return `
-    <div class="tester-toolbar">
-      <div class="tester-toolbar-row">
-        <span class="tester-badge">🧪 ${scenario.label}</span>
-        <button id="tester-change-btn" class="tester-link-btn" type="button">Change</button>
-        <button id="tester-logout-btn" class="tester-link-btn" type="button">Log out</button>
-      </div>
-      <div class="tester-toolbar-row tester-sim-row">
-        <span class="tester-sim-label">Simulate streak:</span>
-        <input id="tester-streak-input" type="number" min="0" max="6" value="${currentStreakCount()}" class="tester-sim-input" />
-        <button id="tester-sim-set" class="tester-mini-btn tester-mini-btn--set" type="button">Set</button>
-        <button id="tester-sim-reset" class="tester-mini-btn" type="button">Reset</button>
-      </div>
-    </div>
-  `;
-}
-
 function homePage() {
   return `
-    ${state.isTester ? testerToolbar() : ""}
     <main class="container">
       <header class="page-header">
         <div class="header-row">
@@ -1047,7 +890,6 @@ const TERMS_SECTIONS = [
 
 function termsPage() {
   return `
-    ${state.isTester ? testerToolbar() : ""}
     <main class="container">
       <button id="back-to-home-from-terms-btn" class="back-link" type="button">${ICONS.backArrow} ${
     state.termsReturnView === "checkin" ? "Daily Check-in" : "EazeScore"
@@ -1080,7 +922,6 @@ function termsPage() {
 
 function checkinPage() {
   return `
-    ${state.isTester ? testerToolbar() : ""}
     <main class="container">
       <button id="back-to-home-btn" class="back-link" type="button">${ICONS.backArrow} EazeScore</button>
       <header class="page-header">
@@ -1186,21 +1027,17 @@ function render() {
   }
 
   if (state.view === "login") {
-    root.innerHTML = loginPage() + (state.showTestModal ? testModeModal() : "");
+    root.innerHTML = loginPage();
     wireLoginEvents();
     if (state.showCountrySheet) wireCountrySheetEvents();
-    if (state.showTestModal) wireTestModal();
   } else if (state.view === "home") {
     root.innerHTML =
       homePage() +
-      (state.showTestModal ? testModeModal() : "") +
       (state.homeInfoModal ? homeInfoModal() : "") +
       (state.showClaimModal ? claimModal() : "") +
       (state.welcomeBonusJustAwarded ? welcomeBonusModal() : "");
     queryEls();
     wireHomeEvents();
-    if (state.isTester) wireTesterToolbar();
-    if (state.showTestModal) wireTestModal();
     if (state.homeInfoModal) wireHomeInfoModal();
     if (state.showClaimModal) wireClaimModal();
     if (state.claimResult?.ok) spawnConfetti();
@@ -1224,18 +1061,14 @@ function render() {
   } else if (state.view === "terms") {
     root.innerHTML = termsPage();
     wireTermsEvents();
-    if (state.isTester) wireTesterToolbar();
   } else {
     root.innerHTML =
       checkinPage() +
-      (state.showTestModal ? testModeModal() : "") +
       (state.selectedEntryIdx !== null ? dayDetailModal() : "") +
       (state.showRulesModal ? rulesModal() : "") +
       (state.showBonusModal ? bonusModal() : "");
     queryEls();
     wireCheckinEvents();
-    if (state.isTester) wireTesterToolbar();
-    if (state.showTestModal) wireTestModal();
     if (state.selectedEntryIdx !== null) wireDayDetailModal();
     if (state.showRulesModal) wireRulesModal();
     if (state.showBonusModal) wireBonusModal();
@@ -1279,7 +1112,6 @@ function wireLoginEvents() {
 
     setTimeout(() => {
       localStorage.setItem("checkin_session", JSON.stringify({ phone, country: state.country }));
-      state.isTester = TEST_PHONES.includes(phone);
 
       fill?.classList.remove("crawling");
       fill?.classList.add("done");
@@ -1287,23 +1119,17 @@ function wireLoginEvents() {
       if (label) label.textContent = "✓ Logged in";
 
       setTimeout(async () => {
-        if (state.isTester) {
-          state.testMode = null;
-          state.showTestModal = true;
-          render();
-        } else {
-          // Resolves/creates the user row up front (see app/routers/auth.py)
-          // so the home page's first GET /eaze-score call below always finds
-          // a real user and can award the welcome bonus correctly.
-          try {
-            await apiPost("/auth/login", { phone });
-          } catch (err) {
-            console.error("Login call failed", err);
-          }
-          state.view = "home";
-          render();
-          loadHomeData(phone);
+        // Resolves/creates the user row up front (see app/routers/auth.py)
+        // so the home page's first GET /eaze-score call below always finds
+        // a real user and can award the welcome bonus correctly.
+        try {
+          await apiPost("/auth/login", { phone });
+        } catch (err) {
+          console.error("Login call failed", err);
         }
+        state.view = "home";
+        render();
+        loadHomeData(phone);
       }, 350);
     }, 1100);
   });
@@ -1369,92 +1195,13 @@ function wireCountryOptionEvents() {
   });
 }
 
-// ---------- Tester modal / toolbar wiring ----------
-function wireTestModal() {
-  document.querySelectorAll(".test-option").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const key = btn.dataset.scenario;
-      state.testMode = key;
-      localStorage.setItem("checkin_testMode", key);
-      state.showTestModal = false;
-      Object.assign(state, scenarioState(key));
-      state.selectedMood = null;
-      state.checkedInToday = false;
-      state.nextCheckinAt = null;
-      // Simulated home-page fields — testers never hit the real backend, so
-      // these are derived locally instead of coming from GET /eaze-score.
-      // "Fresh Start" doubles as the demo for a first-ever login: the
-      // welcome bonus fires once, same as it would for a real new user.
-      state.sessionsCount = state.checkInEntries.length;
-      state.todayEarned = 0;
-      state.welcomeBonusJustAwarded = key === "fresh";
-      if (state.welcomeBonusJustAwarded) state.eazeScore += 20;
-      state.view = "home";
-      render();
-    });
-  });
-}
-
-function wireTesterToolbar() {
-  document.getElementById("tester-change-btn")?.addEventListener("click", () => {
-    state.showTestModal = true;
-    render();
-  });
-
-  document.getElementById("tester-logout-btn")?.addEventListener("click", logout);
-
-  document.getElementById("tester-sim-set")?.addEventListener("click", () => {
-    const input = document.getElementById("tester-streak-input");
-    const n = Math.max(0, Math.min(6, Number(input.value) || 0));
-    state.streakDays = buildStreakDays(n);
-    state.eazeScore = n * POINTS_PER_CHECKIN;
-    state.lastBonusAwarded = false;
-    state.todayEarned = 0;
-    state.selectedMood = null;
-    state.checkedInToday = false;
-    state.nextCheckinAt = null;
-    render();
-  });
-
-  document.getElementById("tester-sim-reset")?.addEventListener("click", () => {
-    Object.assign(state, scenarioState(state.testMode || "active"));
-    state.sessionsCount = state.checkInEntries.length;
-    state.todayEarned = 0;
-    state.selectedMood = null;
-    state.checkedInToday = false;
-    state.nextCheckinAt = null;
-    render();
-  });
-}
-
-function logout() {
-  localStorage.removeItem("checkin_session");
-  localStorage.removeItem("checkin_testMode");
-  state.view = "login";
-  state.phone = "";
-  state.country = COUNTRIES[0];
-  state.isTester = false;
-  state.testMode = null;
-  state.showTestModal = false;
-  state.showCountrySheet = false;
-  state.selectedMood = null;
-  state.checkedInToday = false;
-  state.nextCheckinAt = null;
-  state.sessionsCount = 0;
-  state.todayEarned = 0;
-  state.welcomeBonusJustAwarded = false;
-  state.showRulesModal = false;
-  Object.assign(state, scenarioState("active"));
-  render();
-}
-
 // ---------- Terms page wiring ----------
 function wireTermsEvents() {
   document.getElementById("back-to-home-from-terms-btn")?.addEventListener("click", () => {
     const returnView = state.termsReturnView;
     state.view = returnView;
     render();
-    if (returnView === "home" && !state.isTester && state.phone) loadHomeData(state.phone);
+    if (returnView === "home" && state.phone) loadHomeData(state.phone);
   });
 }
 
@@ -1484,7 +1231,7 @@ function wireCheckinEvents() {
   document.getElementById("back-to-home-btn")?.addEventListener("click", () => {
     state.view = "home";
     render();
-    if (!state.isTester && state.phone) loadHomeData(state.phone);
+    if (state.phone) loadHomeData(state.phone);
   });
 
   // Whole card is the click target, not just the inner label — the inner
@@ -1534,12 +1281,11 @@ function wireCheckinEvents() {
 function navigateToCheckin() {
   state.view = "checkin";
   // Only clear the transient mood pick — checkedInToday/nextCheckinAt/
-  // streakDays reflect real (or tester-simulated) state and must not be
-  // force-reset here, or they'd desync from what's actually true until the
-  // fetch below lands.
+  // streakDays reflect real state and must not be force-reset here, or
+  // they'd desync from what's actually true until the fetch below lands.
   state.selectedMood = null;
   render();
-  if (!state.isTester && state.phone) loadRealUserData(state.phone);
+  if (state.phone) loadRealUserData(state.phone);
 }
 
 // ---------- Home page wiring ----------
@@ -1562,7 +1308,7 @@ function wireHomeEvents() {
 
   document.getElementById("checkin-banner-btn")?.addEventListener("click", () => {
     navigateToCheckin();
-    if (!state.isTester && state.phone) {
+    if (state.phone) {
       // Fire-and-forget — logs this banner tap (see CheckinBannerLog on the
       // backend); never blocks or fails the navigation it's tracking.
       apiPost("/checkins/banner-click", { phone: state.phone }).catch((err) => {
@@ -1655,23 +1401,10 @@ function spawnConfetti(containerId = "claim-confetti") {
 
 // Always empties the full balance — see backend/app/routers/eaze_score.py's
 // claim_coins, which deducts the ledger before even attempting the coin
-// transfer, so EazeScore resets to 0 regardless of whether delivery
-// succeeds. Testers have no real backend identity, so their claim is
-// simulated locally instead of hitting the API.
+// transfer, so EazeScore resets to 0 regardless of whether delivery succeeds.
 async function handleClaimSubmit() {
   if (state.eazeScore <= 0 || state.claiming) return;
   const coins = computeCoins(state.eazeScore);
-
-  if (state.isTester) {
-    state.eazeScore = 0;
-    state.claimResult = {
-      ok: true,
-      coins,
-      message: "Simulated claim (tester mode) — no real coins were sent.",
-    };
-    render();
-    return;
-  }
 
   state.claiming = true;
   render();
@@ -2044,110 +1777,54 @@ async function handleSave() {
   // forward again.
   const wasCheckedInToday = state.checkedInToday;
 
-  if (!state.isTester) {
-    // Real user: persist for real, so this survives a refresh. The backend
-    // is the source of truth for score/streak — we only mirror its result
-    // into local UI state, never compute it ourselves.
-    try {
-      const note = els.textarea.value.trim() || null;
-      const result = await apiPost("/checkins", { phone: state.phone, mood, note });
+  // Persist for real, so this survives a refresh. The backend is the source
+  // of truth for score/streak — we only mirror its result into local UI
+  // state, never compute it ourselves.
+  try {
+    const note = els.textarea.value.trim() || null;
+    const result = await apiPost("/checkins", { phone: state.phone, mood, note });
 
-      state.checkInEntries = [...state.checkInEntries, { value: mood, at: now, message }].slice(-RAW_ENTRIES_CAP);
-      if (state.chartView === "day" && !state.chartSelectedDate) {
-        state.chartSelectedDate = localDateKey(now);
-      }
-
-      let todayIdx = -1;
-      if (!wasCheckedInToday) {
-        todayIdx = state.streakDays.indexOf(false);
-        if (todayIdx !== -1) state.streakDays[todayIdx] = true;
-      }
-
-      // Claimable balance, not lifetime earned — see computeStateFromApi.
-      state.eazeScore = result.score.available;
-      state.todayEarned = result.score.today_earned;
-      state.sessionsCount = result.score.sessions_count;
-      state.lastBonusAwarded = result.streak_bonus_awarded;
-      state.showBonusModal = result.streak_bonus_awarded;
-      state.checkedInToday = true;
-      state.nextCheckinAt = result.score.next_checkin_at;
-      state.submitting = false;
-
-      // Full render (not just renderAll) when the bonus popup needs to be
-      // injected into the DOM — renderAll only patches existing elements,
-      // it never appends the modal overlay itself.
-      if (state.showBonusModal) render();
-      else renderAll();
-      renderReaffirm(message);
-
-      const dot = els.streakDots.querySelector(`[data-idx="${todayIdx}"]`);
-      if (dot) dot.classList.add("just-filled");
-    } catch (err) {
-      console.error("Failed to save check-in", err);
-      state.submitting = false;
-      renderEntryState(); // re-enable Save so the user can retry
+    state.checkInEntries = [...state.checkInEntries, { value: mood, at: now, message }].slice(-RAW_ENTRIES_CAP);
+    if (state.chartView === "day" && !state.chartSelectedDate) {
+      state.chartSelectedDate = localDateKey(now);
     }
-    return;
+
+    let todayIdx = -1;
+    if (!wasCheckedInToday) {
+      todayIdx = state.streakDays.indexOf(false);
+      if (todayIdx !== -1) state.streakDays[todayIdx] = true;
+    }
+
+    // Claimable balance, not lifetime earned — see computeStateFromApi.
+    state.eazeScore = result.score.available;
+    state.todayEarned = result.score.today_earned;
+    state.sessionsCount = result.score.sessions_count;
+    state.lastBonusAwarded = result.streak_bonus_awarded;
+    state.showBonusModal = result.streak_bonus_awarded;
+    state.checkedInToday = true;
+    state.nextCheckinAt = result.score.next_checkin_at;
+    state.submitting = false;
+
+    // Full render (not just renderAll) when the bonus popup needs to be
+    // injected into the DOM — renderAll only patches existing elements,
+    // it never appends the modal overlay itself.
+    if (state.showBonusModal) render();
+    else renderAll();
+    renderReaffirm(message);
+
+    const dot = els.streakDots.querySelector(`[data-idx="${todayIdx}"]`);
+    if (dot) dot.classList.add("just-filled");
+  } catch (err) {
+    console.error("Failed to save check-in", err);
+    state.submitting = false;
+    renderEntryState(); // re-enable Save so the user can retry
   }
-
-  // Tester: local-only simulation, exactly as before — testers never touch
-  // the real backend.
-  await new Promise((resolve) => setTimeout(resolve, 700));
-
-  // Newest check-in joins the history at the end (chart is chronological,
-  // oldest to newest), oldest entry drops off the front so it always shows a
-  // fixed window, never growing unbounded. The message is stored with the
-  // entry so tapping this point later shows the exact same reassurance, not
-  // a freshly re-rolled one.
-  state.checkInEntries = [...state.checkInEntries, { value: mood, at: now, message }].slice(-RAW_ENTRIES_CAP);
-  if (state.chartView === "day" && !state.chartSelectedDate) {
-    state.chartSelectedDate = localDateKey(now);
-  }
-
-  // Fill whichever circle comes right after the current streak — filled days
-  // are always contiguous starting from the leftmost circle. Only on the
-  // day's first check-in, same rule as the real-user path above.
-  let todayIdx = -1;
-  let streakAfter = currentStreakCount();
-  if (!wasCheckedInToday) {
-    const streakBefore = currentStreakCount();
-    todayIdx = state.streakDays.indexOf(false);
-    if (todayIdx !== -1) state.streakDays[todayIdx] = true;
-    streakAfter = currentStreakCount();
-    state.lastBonusAwarded = streakBefore < 7 && streakAfter >= 7;
-    state.showBonusModal = state.lastBonusAwarded;
-  } else {
-    state.lastBonusAwarded = false;
-  }
-
-  // Every check-in earns points, regardless of how many already happened
-  // today; completing a full 7-day week earns the one-time weekly bonus,
-  // awarded exactly on the day's first check-in that gets the streak to 7.
-  state.eazeScore += POINTS_PER_CHECKIN;
-  state.todayEarned += POINTS_PER_CHECKIN + (state.lastBonusAwarded ? WEEKLY_STREAK_BONUS : 0);
-  if (state.lastBonusAwarded) state.eazeScore += WEEKLY_STREAK_BONUS;
-  state.sessionsCount += 1;
-  state.checkedInToday = true;
-  // Simulated cooldown, same 3-hour window the real backend enforces.
-  state.nextCheckinAt = new Date(now.getTime() + 3 * 60 * 60 * 1000).toISOString();
-
-  state.submitting = false;
-
-  // Full render (not just renderAll) when the bonus popup needs to be
-  // injected into the DOM — renderAll only patches existing elements, it
-  // never appends the modal overlay itself.
-  if (state.showBonusModal) render();
-  else renderAll();
-  renderReaffirm(message);
-
-  const dot = els.streakDots.querySelector(`[data-idx="${todayIdx}"]`);
-  if (dot) dot.classList.add("just-filled");
 }
 
 render();
 
-// Restored session for a real (non-tester) user: initial render above shows
-// the clean shell, this fetches their actual persisted score/history.
-if (state.view === "home" && !state.isTester && state.phone) {
+// Restored session: initial render above shows the clean shell, this
+// fetches the user's actual persisted score/history.
+if (state.view === "home" && state.phone) {
   loadHomeData(state.phone);
 }
