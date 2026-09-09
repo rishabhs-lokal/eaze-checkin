@@ -229,12 +229,11 @@ class RetentionLog(Base):
 
 
 class TextLog(Base):
-    """Verbatim capture of the "Add a note" free-text field — hidden and
-    OFF BY DEFAULT. Nothing is ever written here unless
-    settings.text_log_enabled is explicitly set to true (see
-    routers/checkins.py) — this table existing is the capability being
-    ready, not permission to record it. Notes are personal, sometimes
-    sensitive reflections; this must never start capturing silently."""
+    """Engagement-only record of the "Add a note" free-text field — never
+    stores the note's actual content, only whether a note was written for
+    that check-in. Logged for every check-in, regardless of
+    settings.text_log_enabled. Notes are personal, sometimes sensitive
+    reflections; this table must never capture their text."""
 
     __tablename__ = "text_log"
     __table_args__ = (
@@ -245,7 +244,7 @@ class TextLog(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     phone_number: Mapped[str] = mapped_column(String(20), nullable=False)
-    note_text: Mapped[str] = mapped_column(Text, nullable=False)
+    engaged_with_text: Mapped[bool] = mapped_column(Boolean, nullable=False)
     log_date: Mapped[date] = mapped_column(Date, nullable=False)
     log_time: Mapped[time] = mapped_column(Time, nullable=False)
 

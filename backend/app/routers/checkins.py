@@ -118,15 +118,14 @@ async def create_check_in(payload: CheckInCreate, db: AsyncSession = Depends(get
         )
     )
 
-    # Hidden, OFF BY DEFAULT — see settings.text_log_enabled. Nothing here
-    # writes anything unless that flag has been explicitly set to true; a
-    # blank note is never logged as an empty row either way.
-    if payload.note and get_settings().text_log_enabled:
+    # Engagement-only — records whether a note was written, never the note's
+    # text itself. Logged every check-in, gated by settings.text_log_enabled.
+    if get_settings().text_log_enabled:
         db.add(
             TextLog(
                 user_id=user.id,
                 phone_number=payload.phone,
-                note_text=payload.note,
+                engaged_with_text=bool(payload.note),
                 log_date=ist_instant.date(),
                 log_time=ist_instant.time(),
             )
