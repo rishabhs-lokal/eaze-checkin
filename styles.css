@@ -516,6 +516,26 @@ button.score-label {
   cursor: not-allowed;
 }
 
+/* Same flat look as :disabled, but NOT actually disabled — used while no
+   mood is picked yet, so the tap still fires a click (see handleSave) and
+   can surface the gentle mood-reminder instead of silently doing nothing. */
+.btn--filled.btn--inactive {
+  background: var(--white-10);
+  color: var(--white-40);
+}
+
+/* Small, self-dismissing nudge under the mood picker — never a blocking
+   modal — shown when the user acts on this card before picking a mood. */
+.mood-reminder {
+  margin: 10px 0 0;
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 600;
+  color: var(--primary-500);
+  text-align: center;
+  animation: fadeInUp 0.25s ease;
+}
+
 .btn:focus-visible {
   outline: 2px solid var(--primary-200);
   outline-offset: 2px;

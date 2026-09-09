@@ -603,6 +603,7 @@ let els = {};
 function queryEls() {
   els = {
     moodPicker: document.getElementById("mood-picker"),
+    moodReminder: document.getElementById("mood-reminder"),
     textarea: document.getElementById("reflection-text"),
     saveBtn: document.getElementById("save-btn"),
     saveBtnLabel: document.getElementById("save-btn-label"),
@@ -1001,44 +1002,46 @@ function homePage() {
   `;
 }
 
-// Verbatim content — line breaks in the source were just word-wrap, not
-// intentional paragraph splits, so each section's body is re-flowed into
-// one paragraph rather than kept as separate lines.
 const TERMS_SECTIONS = [
   {
     n: 1,
     title: "Eligibility",
-    body: "Available to all registered eaze users aged 18+. Participation implies acceptance of these terms.",
+    body: "This feature is available to registered eaze users aged 18 or older. By participating in daily check-ins, you accept these Terms. eaze may suspend or restrict access for users who do not meet these requirements.",
   },
   {
     n: 2,
-    title: "Free Spins",
-    body: "Each user receives one free spin per day. Spins reset at midnight local time and are non-transferable.",
+    title: "Daily Check-ins & EazeScore",
+    body: "Each check-in you complete adds points to your EazeScore. Check-ins are subject to a cooldown period between submissions and are grouped by calendar day in Indian Standard Time (IST), regardless of your device's local time zone. Maintaining a 7-day consecutive check-in streak awards a one-time bonus of 50 EazeScore points; new users receive a one-time welcome bonus of 20 EazeScore points. Streaks and bonuses are non-transferable between accounts and have no cash value in themselves.",
   },
   {
     n: 3,
-    title: "Prizes & Coins",
-    body: "Coin rewards must be claimed within the session. Coins are credited to your eaze wallet automatically upon claiming.",
+    title: "Coin Conversion & Claims",
+    body: "EazeScore may be converted into coins at eaze's published conversion rate, which may apply different rates at different EazeScore thresholds and is subject to change on notice. Submitting a claim converts your entire available EazeScore balance to coins and resets your balance to zero — partial claims are not supported. Claimed coins are submitted for transfer to your eaze wallet and are subject to processing by eaze's payment systems; submission of a claim does not guarantee instant crediting, and coins may remain pending until processing completes.",
   },
   {
     n: 4,
-    title: "Jackpot",
-    body: "Jackpot prizes are subject to additional verification. Identity proof may be requested. All jackpot decisions are final and binding.",
+    title: "Verification & Anti-Fraud Checks",
+    body: "eaze may require identity or account verification before processing a claim, particularly where a claim is unusually large or flagged by fraud-prevention systems. eaze may delay, decline, or reverse a claim pending verification. Decisions made under this section are final.",
   },
   {
     n: 5,
     title: "Fair Play",
-    body: "Any attempt to manipulate spin outcomes or exploit system vulnerabilities will result in immediate account suspension and forfeiture of all winnings.",
+    body: "Any attempt to manipulate check-in timestamps or streak calculations, circumvent the check-in cooldown, use multiple or automated accounts, or exploit vulnerabilities in the check-in or coin systems will result in immediate suspension of your account and forfeiture of any accrued EazeScore, coins, or pending claims.",
   },
   {
     n: 6,
     title: "Limitation of Liability",
-    body: "eaze shall not be held liable for technical issues or delays in prize crediting beyond reasonable control.",
+    body: "eaze is not liable for delays, interruptions, or failures in EazeScore calculation or coin crediting arising from technical issues, third-party payment or wallet processing systems, or other causes beyond eaze's reasonable control.",
   },
   {
     n: 7,
     title: "Modifications",
-    body: "eaze reserves the right to modify, suspend, or terminate this feature at any time.",
+    body: "eaze reserves the right to modify, suspend, or terminate the check-in feature, EazeScore mechanics, or coin conversion rates at any time, with or without notice.",
+  },
+  {
+    n: 8,
+    title: "Not Medical Advice",
+    body: "EazeScore points and streaks reflect check-in activity only — they are not a measure of your mental health or wellbeing. EazeCheckin is a self-reflection tool and does not diagnose, treat, or assess any medical or mental health condition. It is not a substitute for professional care.",
   },
 ];
 
@@ -1107,6 +1110,7 @@ function checkinPage() {
       <section class="card entry-card" id="entry-card">
         <p class="entry-prompt">Pick how you're feeling right now</p>
         <div class="mood-picker" id="mood-picker" role="radiogroup" aria-label="Select your mood"></div>
+        <p class="mood-reminder" id="mood-reminder" role="status" aria-live="polite" hidden>Pick a mood above to continue</p>
 
         <label class="field-label" for="reflection-text">Add a note <span class="optional-tag">(optional, 100 words max)</span></label>
         <textarea
@@ -1458,6 +1462,19 @@ function wireTermsEvents() {
 function wireCheckinEvents() {
   els.saveBtn?.addEventListener("click", handleSave);
 
+  // Tapping blank space on this card (the prompt text, the padding around
+  // the picker) before choosing a mood gets the same gentle nudge Save
+  // gives — note-taking is exempt, so clicking into the textarea to write
+  // first is never treated as "you forgot something." Mood-option taps
+  // never reach here with selectedMood still null (that button's own
+  // handler already set it before this bubbles up), so they're naturally
+  // excluded too.
+  document.getElementById("entry-card")?.addEventListener("click", (e) => {
+    if (state.selectedMood !== null || inCooldown() || state.submitting) return;
+    if (e.target.closest("#reflection-text, .field-label, .note-counter")) return;
+    showMoodReminder();
+  });
+
   document.getElementById("terms-btn")?.addEventListener("click", () => {
     state.termsReturnView = "checkin";
     state.view = "terms";
@@ -1745,6 +1762,29 @@ function renderNoteCounter() {
   els.noteCounter.classList.toggle("note-counter--limit", words >= NOTE_WORD_LIMIT);
 }
 
+let moodReminderTimer = null;
+
+// Gentle, self-dismissing nudge — never a blocking modal — shown when the
+// user acts on this card (taps Save, taps blank space in it) before
+// picking a mood. Safe to call repeatedly; it just resets its own timer.
+function showMoodReminder() {
+  if (!els.moodReminder) return;
+  els.moodReminder.hidden = false;
+  clearTimeout(moodReminderTimer);
+  moodReminderTimer = setTimeout(() => {
+    if (els.moodReminder) els.moodReminder.hidden = true;
+  }, 2200);
+}
+
+// Picking a mood always resolves whatever the reminder was nudging about —
+// hide it immediately rather than leaving it to linger out its timer
+// underneath a now-selected, glowing mood.
+function hideMoodReminder() {
+  if (!els.moodReminder) return;
+  clearTimeout(moodReminderTimer);
+  els.moodReminder.hidden = true;
+}
+
 function renderMoodPicker() {
   els.moodPicker.innerHTML = "";
   const hasSelection = state.selectedMood !== null;
@@ -1764,6 +1804,7 @@ function renderMoodPicker() {
     btn.innerHTML = `<span class="mood-circle"><span class="emoji">${mood.emoji}</span></span><span class="mood-label">${mood.label}</span>`;
     btn.addEventListener("click", () => {
       state.selectedMood = mood.value;
+      hideMoodReminder();
       renderMoodPicker();
       renderSaveButton();
     });
@@ -1773,7 +1814,13 @@ function renderMoodPicker() {
 
 function renderSaveButton() {
   const cooldown = inCooldown();
-  els.saveBtn.disabled = cooldown || state.submitting || state.selectedMood === null;
+  // Only truly disabled (no click event at all) for reasons the reminder
+  // can't help with — mid-request, or cooldown. With no mood picked yet,
+  // it stays clickable (still looking just as inactive via .btn--inactive)
+  // so tapping it can surface the gentle reminder below instead of doing
+  // nothing silently.
+  els.saveBtn.disabled = cooldown || state.submitting;
+  els.saveBtn.classList.toggle("btn--inactive", !cooldown && !state.submitting && state.selectedMood === null);
   els.saveBtnLabel.innerHTML = state.submitting
     ? '<span class="spinner"></span> Thinking…'
     : cooldown
@@ -1980,7 +2027,11 @@ function renderHome() {
 }
 
 async function handleSave() {
-  if (state.selectedMood === null || state.submitting || inCooldown()) return;
+  if (state.submitting || inCooldown()) return;
+  if (state.selectedMood === null) {
+    showMoodReminder();
+    return;
+  }
 
   state.submitting = true;
   renderEntryState();
