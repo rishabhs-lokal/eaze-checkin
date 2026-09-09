@@ -72,9 +72,21 @@ const COUNTRIES = [
   { flag: "🇺🇸", name: "United States", code: "+1" },
 ];
 
-const TEST_PHONES = ["9999999999"];
+// Tester mode (the toolbar, scenario simulator, and the tester-number bypass
+// below) only ever unlocks on localhost or a staging-looking host. Anywhere
+// else — a real production domain — this is false and the tester phone
+// number does nothing, so it can never be typed into the live app to
+// unlock the simulator or skip the real backend. Allowlisted, not
+// blocklisted: an unrecognized host defaults to "production" (disabled),
+// which is the safe failure direction here.
+const TESTER_MODE_ENABLED =
+  ["localhost", "127.0.0.1"].includes(window.location.hostname) ||
+  window.location.hostname.includes("staging");
+
+const TEST_PHONES = TESTER_MODE_ENABLED ? ["9999999999"] : [];
 const EAZE_LOGO_SRC = "assets/eaze-logo.png?v=3";
 const EAZE_LOGO_WHITE_SRC = "assets/eaze-logo-white.png?v=1";
+const EAZE_COIN_SRC = "assets/eaze-coin.png?v=1";
 
 // One outline icon family: thin stroke, rounded joins, no fill — used in
 // place of decorative emoji anywhere an emoji would otherwise sit inside a
@@ -164,6 +176,19 @@ function shortDateLabel(dateObj) {
 // useful measured against the clock the user will actually look at.
 function formatClockTime(dateObj) {
   return dateObj.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+}
+
+// HH:MM:SS remaining until targetDate — a real ticking-down clock, not a
+// fixed "opens at" time. Anchored to whatever targetDate actually holds
+// (state.nextCheckinAt, set from the exact moment of the user's own last
+// check-in — see next_eligible_at on the backend), never a hardcoded
+// duration, so it always agrees with the real cooldown the backend enforces.
+function formatCountdown(targetDate) {
+  const totalSeconds = Math.max(0, Math.floor((targetDate - new Date()) / 1000));
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = totalSeconds % 60;
+  return [h, m, s].map((n) => String(n).padStart(2, "0")).join(":");
 }
 
 // "YYYY-MM-DD" in fixed IST — the grouping key for the day-level chart view.
@@ -287,6 +312,23 @@ const SCENARIOS = {
 const POINTS_PER_CHECKIN = 10;
 const WEEKLY_STREAK_BONUS = 50;
 
+// EazeScore -> coin conversion, mirrored from the backend's compute_coins
+// (app/services/eaze_score.py) so the claim card/modal can show accurate
+// numbers before the user ever taps claim — never a separate source of
+// truth, just the same tiered formula run client-side for display.
+const COIN_HALFWAY_THRESHOLD = 250;
+const COIN_LOW_RATE = 0.5;
+const COIN_HIGH_RATE = 1.0;
+
+function computeCoins(score) {
+  if (score <= 0) return 0;
+  const coins =
+    score <= COIN_HALFWAY_THRESHOLD
+      ? score * COIN_LOW_RATE
+      : COIN_HALFWAY_THRESHOLD * COIN_LOW_RATE + (score - COIN_HALFWAY_THRESHOLD) * COIN_HIGH_RATE;
+  return Math.floor(coins);
+}
+
 function scenarioState(key) {
   const s = SCENARIOS[key] || SCENARIOS.active;
   const checkInEntries = buildCheckInEntries(s.moodValues);
@@ -363,7 +405,11 @@ function computeStateFromApi(checkIns, scoreState) {
     streakDays: buildFilledStreakDays(scoreState.streak),
     checkedInToday: scoreState.checked_in_today,
     nextCheckinAt: scoreState.next_checkin_at,
-    eazeScore: scoreState.earned,
+    // The claimable balance, not the lifetime earned total — this is what
+    // resets to 0 right after a claim (see claim_coins in
+    // backend/app/routers/eaze_score.py: earned never decreases, only
+    // available does).
+    eazeScore: scoreState.available,
     lastBonusAwarded: false,
     sessionsCount: scoreState.sessions_count,
     todayEarned: scoreState.today_earned,
@@ -399,7 +445,8 @@ async function loadHomeData(phone) {
   try {
     const scoreState = await apiGet(`/eaze-score/${phone}`);
     Object.assign(state, {
-      eazeScore: scoreState.earned,
+      // Claimable balance, not lifetime earned — see computeStateFromApi.
+      eazeScore: scoreState.available,
       streakDays: buildFilledStreakDays(scoreState.streak),
       sessionsCount: scoreState.sessions_count,
       todayEarned: scoreState.today_earned,
@@ -489,12 +536,34 @@ const state = {
   submitting: false,
   eazeScore: 0,
   lastBonusAwarded: false,
+  // Popup celebrating a just-awarded 7-day streak bonus — replaces the old
+  // inline green "+50 bonus" chip entirely (see renderDailyScore).
+  showBonusModal: false,
 
   // Lifetime-score home page (login -> home -> checkin).
   sessionsCount: 0,
   todayEarned: 0,
   welcomeBonusJustAwarded: false,
   showRulesModal: false,
+  // Which home-page stat card's info popup is open — null, "score", or
+  // "sessions". Mutually exclusive with showRulesModal (that one's the
+  // check-in page's own info popup).
+  homeInfoModal: null,
+
+  // eazeScore (above) IS the claimable balance — bound to the backend's
+  // `available` (earned minus already-claimed), not `earned`, so it reads
+  // as 0 right after a claim and builds back up from there. See
+  // computeCoins for how it converts to coins.
+  showClaimModal: false,
+  claiming: false,
+  // Set once a claim attempt resolves (success or otherwise) — the modal
+  // switches from the explainer/CTA view to a confirmation view while this
+  // is non-null. Cleared when the modal closes.
+  claimResult: null,
+
+  // Which view opened the terms page ("home" or "checkin") — its back
+  // button returns here instead of always landing on home.
+  termsReturnView: "home",
 };
 
 (function restoreSession() {
@@ -548,8 +617,6 @@ function queryEls() {
     streakDots: document.getElementById("streak-dots"),
     streakCaption: document.getElementById("streak-caption"),
     scoreValue: document.getElementById("score-value"),
-    scoreBonusChip: document.getElementById("score-bonus-chip"),
-    scoreBarFill: document.getElementById("score-bar-fill"),
     scoreCaption: document.getElementById("score-caption"),
     sessionsValue: document.getElementById("sessions-value"),
   };
@@ -593,7 +660,7 @@ function loginPage() {
         </div>
         <p class="login-error" id="login-error"></p>
 
-        <p class="login-hint">Tester number: ${TEST_PHONES[0]}</p>
+        ${TESTER_MODE_ENABLED ? `<p class="login-hint">Tester number: ${TEST_PHONES[0]}</p>` : ""}
       </div>
     </div>
     ${state.showCountrySheet ? countrySheet() : ""}
@@ -688,6 +755,133 @@ function rulesModal() {
   `;
 }
 
+// Celebration popup for the 7-day streak bonus — replaces the old inline
+// green "+50 bonus" chip on the EazeScore Daily card entirely.
+function bonusModal() {
+  return `
+    <div id="bonus-overlay" class="day-detail-overlay">
+      <div class="day-detail-modal rules-modal">
+        <button id="bonus-close" class="day-detail-close" type="button" aria-label="Close">✕</button>
+        <span class="day-detail-emoji" aria-hidden="true">🔥</span>
+        <p class="day-detail-day">7-day streak</p>
+        <p class="day-detail-mood">+${WEEKLY_STREAK_BONUS} bonus added to your EazeScore</p>
+        <button id="bonus-done" class="home-info-cta" type="button">Nice!</button>
+      </div>
+    </div>
+  `;
+}
+
+// Info popups for the home page's two tappable stat cards — context for
+// what the stat means plus a shortcut into the next check-in, so tapping
+// either card is never a dead end.
+const HOME_INFO_CONTENT = {
+  score: {
+    title: "EazeScore",
+    subtitle: "Your current score, explained",
+    points: [
+      "Every check-in adds points to your EazeScore.",
+      "A 7-day streak earns a +50 point bonus.",
+      "Claiming coins converts your full balance and resets it to 0 — see the claim card below to convert it.",
+    ],
+  },
+  sessions: {
+    title: "Sessions completed",
+    subtitle: "What counts as a session",
+    points: [
+      "Every check-in you save counts as one session.",
+      "Sessions build your streak and your EazeScore together.",
+      "Check in again once your 3-hour cooldown clears.",
+    ],
+  },
+};
+
+function homeInfoModal() {
+  const content = HOME_INFO_CONTENT[state.homeInfoModal];
+  if (!content) return "";
+  return `
+    <div id="home-info-overlay" class="day-detail-overlay">
+      <div class="day-detail-modal rules-modal">
+        <button id="home-info-close" class="day-detail-close" type="button" aria-label="Close">✕</button>
+        <img src="${EAZE_LOGO_WHITE_SRC}" alt="" class="home-info-icon" />
+        <p class="day-detail-day">${content.title}</p>
+        <p class="day-detail-mood">${content.subtitle}</p>
+        <ul class="rules-list home-info-list">
+          ${content.points.map((point) => `<li>${point}</li>`).join("")}
+        </ul>
+        <button id="home-info-cta" class="home-info-cta" type="button">Start your next check-in</button>
+      </div>
+    </div>
+  `;
+}
+
+// Claim modal — always the explainer/breakdown view first (so the
+// conversion mechanism is seen before every claim, not just the first one),
+// then swaps to a result view once handleClaimSubmit resolves.
+function claimModal() {
+  if (state.claimResult) {
+    const r = state.claimResult;
+    return `
+      <div id="claim-overlay" class="day-detail-overlay">
+        <div class="day-detail-modal rules-modal">
+          <button id="claim-close" class="day-detail-close" type="button" aria-label="Close">✕</button>
+          ${r.ok ? `<div class="claim-confetti" id="claim-confetti"></div>` : ""}
+          ${
+            r.ok
+              ? `
+                <img src="${EAZE_COIN_SRC}" alt="" class="claim-result-coin-icon" />
+                <p class="day-detail-day">Coins claimed</p>
+                <p class="claim-result-coins">You've received ${r.coins} coins</p>
+              `
+              : `
+                <span class="claim-result-icon" aria-hidden="true">⏳</span>
+                <p class="day-detail-day">Claim recorded</p>
+                <p class="day-detail-mood">${r.coins} coins requested</p>
+              `
+          }
+          <p class="day-detail-message">${r.message}</p>
+          <button id="claim-done" class="home-info-cta" type="button">Done</button>
+        </div>
+      </div>
+    `;
+  }
+
+  const score = state.eazeScore;
+  const coins = computeCoins(score);
+  const canClaim = score > 0 && !state.claiming;
+  const ctaLabel = state.claiming
+    ? "Claiming…"
+    : score > 0
+    ? `Claim ${coins} coins`
+    : "Nothing to claim yet";
+
+  return `
+    <div id="claim-overlay" class="day-detail-overlay">
+      <div class="day-detail-modal rules-modal">
+        <button id="claim-close" class="day-detail-close" type="button" aria-label="Close">✕</button>
+        <img src="${EAZE_COIN_SRC}" alt="" class="claim-modal-icon" />
+        <p class="day-detail-day">Claim coins</p>
+        <p class="day-detail-mood">How EazeScore converts to coins</p>
+        <ul class="rules-list home-info-list">
+          <li>The first ${COIN_HALFWAY_THRESHOLD} EazeScore converts at ${COIN_LOW_RATE} coins per point.</li>
+          <li>Anything beyond ${COIN_HALFWAY_THRESHOLD} converts at a full ${COIN_HIGH_RATE.toFixed(0)} coin per point.</li>
+          <li>Claiming takes your full available balance — your EazeScore then resets to 0 and builds up again from there.</li>
+        </ul>
+        <div class="claim-breakdown">
+          <div class="claim-breakdown-row">
+            <span>Available EazeScore</span>
+            <span class="claim-breakdown-value">${score}</span>
+          </div>
+          <div class="claim-breakdown-row">
+            <span>You'll receive</span>
+            <span class="claim-breakdown-value claim-breakdown-value--accent">${coins} coins</span>
+          </div>
+        </div>
+        <button id="claim-submit" class="home-info-cta" type="button" ${canClaim ? "" : "disabled"}>${ctaLabel}</button>
+      </div>
+    </div>
+  `;
+}
+
 function testerToolbar() {
   const scenario = SCENARIOS[state.testMode] || SCENARIOS.active;
   return `
@@ -715,7 +909,7 @@ function homePage() {
         <div class="header-row">
           <div>
             <p class="eyebrow">EazeScore</p>
-            <h1 class="headline">Your lifetime EazeScore</h1>
+            <h1 class="headline">Your EazeScore</h1>
           </div>
           <div class="eaze-logo" aria-label="Eaze">
             <img src="${EAZE_LOGO_WHITE_SRC}" alt="Eaze" width="44" height="44" />
@@ -729,36 +923,133 @@ function homePage() {
           : ""
       }
 
-      <section class="card score-card" id="score-card">
-        <div class="score-header">
-          <span class="score-label"><img src="${EAZE_LOGO_WHITE_SRC}" alt="" class="score-icon" /> EazeScore</span>
-          <span class="score-value-row">
-            <span class="score-value" id="score-value">0</span>
-            <span class="score-bonus-text" id="score-bonus-chip" hidden>+${WEEKLY_STREAK_BONUS} bonus</span>
-          </span>
-        </div>
-        <div class="score-bar-track">
-          <div class="score-bar-ticks"><span></span><span></span><span></span><span></span><span></span></div>
-          <div class="score-bar-fill" id="score-bar-fill"></div>
-        </div>
-        <p class="score-caption" id="score-caption"></p>
-      </section>
+      <div class="home-stats-row">
+        <button class="card stat-card" id="score-card" type="button" aria-haspopup="dialog">
+          <span class="stat-card-head"><img src="${EAZE_LOGO_WHITE_SRC}" alt="" class="score-icon" /> EazeScore</span>
+          <span class="stat-card-value" id="score-value">0</span>
+        </button>
+        <button class="card stat-card" id="sessions-card" type="button" aria-haspopup="dialog">
+          <span class="stat-card-head">Sessions completed</span>
+          <span class="stat-card-value" id="sessions-value">${state.sessionsCount}</span>
+        </button>
+      </div>
 
-      <section class="card sessions-card">
-        <p class="sessions-label">Sessions completed</p>
-        <p class="sessions-value" id="sessions-value">${state.sessionsCount}</p>
-        <p class="sessions-caption">Check-ins that built this score</p>
-      </section>
-
-      <button class="home-banner" id="checkin-banner-btn" type="button">
-        <span class="home-banner-text">
-          <span class="home-banner-title">Ready for today's check-in?</span>
-          <span class="home-banner-sub">Check in now to keep your streak going</span>
+      <button
+        class="home-banner${inCooldown() ? " home-banner--cooldown" : ""}"
+        id="checkin-banner-btn"
+        type="button"
+        ${inCooldown() ? "disabled" : ""}
+      >
+        <span class="home-banner-emoji${inCooldown() ? " home-banner-emoji--muted" : ""}" aria-hidden="true">😄</span>
+        <span class="home-banner-copy">
+          ${
+            inCooldown()
+              ? `
+                <span class="home-banner-eyebrow">Checked in · streak safe</span>
+                <span class="home-banner-title">You're all set for now</span>
+                <span class="home-banner-countdown-label">Next check-in in</span>
+                <span class="home-banner-countdown" id="home-banner-countdown">${formatCountdown(parseUtc(state.nextCheckinAt))}</span>
+              `
+              : `
+                <span class="home-banner-eyebrow">Check-in open · keep your streak</span>
+                <span class="home-banner-title">Ready for today's <span class="home-banner-accent">check-in</span>?</span>
+                <span class="home-banner-cta">
+                  Check in now
+                  <svg class="home-banner-arrow" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </span>
+              `
+          }
         </span>
-        <svg class="home-banner-arrow" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </button>
 
-      ${!state.isTester ? `<button id="logout-btn" class="logout-link" type="button">Log out</button>` : ""}
+      <button class="card claim-card" id="claim-card" type="button" aria-haspopup="dialog">
+        <span class="claim-card-header">
+          <span class="claim-card-label"><img src="${EAZE_COIN_SRC}" alt="" class="claim-card-coin-icon" /> Claim coins</span>
+          <svg class="claim-card-chevron" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </span>
+        <span class="claim-card-value">${computeCoins(state.eazeScore)} coins</span>
+        <span class="claim-card-caption">${
+          state.eazeScore > 0
+            ? `from ${state.eazeScore} EazeScore available`
+            : "Check in to start earning EazeScore"
+        }</span>
+      </button>
+
+      <button id="terms-btn" class="logout-link" type="button">Terms and Conditions</button>
+    </main>
+  `;
+}
+
+// Verbatim content — line breaks in the source were just word-wrap, not
+// intentional paragraph splits, so each section's body is re-flowed into
+// one paragraph rather than kept as separate lines.
+const TERMS_SECTIONS = [
+  {
+    n: 1,
+    title: "Eligibility",
+    body: "Available to all registered eaze users aged 18+. Participation implies acceptance of these terms.",
+  },
+  {
+    n: 2,
+    title: "Free Spins",
+    body: "Each user receives one free spin per day. Spins reset at midnight local time and are non-transferable.",
+  },
+  {
+    n: 3,
+    title: "Prizes & Coins",
+    body: "Coin rewards must be claimed within the session. Coins are credited to your eaze wallet automatically upon claiming.",
+  },
+  {
+    n: 4,
+    title: "Jackpot",
+    body: "Jackpot prizes are subject to additional verification. Identity proof may be requested. All jackpot decisions are final and binding.",
+  },
+  {
+    n: 5,
+    title: "Fair Play",
+    body: "Any attempt to manipulate spin outcomes or exploit system vulnerabilities will result in immediate account suspension and forfeiture of all winnings.",
+  },
+  {
+    n: 6,
+    title: "Limitation of Liability",
+    body: "eaze shall not be held liable for technical issues or delays in prize crediting beyond reasonable control.",
+  },
+  {
+    n: 7,
+    title: "Modifications",
+    body: "eaze reserves the right to modify, suspend, or terminate this feature at any time.",
+  },
+];
+
+function termsPage() {
+  return `
+    ${state.isTester ? testerToolbar() : ""}
+    <main class="container">
+      <button id="back-to-home-from-terms-btn" class="back-link" type="button">${ICONS.backArrow} ${
+    state.termsReturnView === "checkin" ? "Daily Check-in" : "EazeScore"
+  }</button>
+      <header class="page-header">
+        <div class="header-row">
+          <div>
+            <p class="eyebrow">Legal</p>
+            <h1 class="headline">Terms and Conditions</h1>
+          </div>
+          <div class="eaze-logo" aria-label="Eaze">
+            <img src="${EAZE_LOGO_WHITE_SRC}" alt="Eaze" width="44" height="44" />
+          </div>
+        </div>
+      </header>
+
+      <section class="card terms-card">
+        ${TERMS_SECTIONS.map(
+          (s) => `
+          <div class="terms-section">
+            <h2 class="terms-heading">${s.n}. ${s.title}</h2>
+            <p class="terms-body">${s.body}</p>
+          </div>
+        `
+        ).join("")}
+      </section>
     </main>
   `;
 }
@@ -769,11 +1060,8 @@ function checkinPage() {
     <main class="container">
       <button id="back-to-home-btn" class="back-link" type="button">${ICONS.backArrow} EazeScore</button>
       <header class="page-header">
-        <div class="header-row">
-          <div>
-            <p class="eyebrow">Daily Check-in</p>
-            <h1 class="headline">How are you feeling right now?</h1>
-          </div>
+        <div class="header-row header-row--centered">
+          <h1 class="headline headline--compact">How are you feeling right now?</h1>
           <div class="eaze-logo" aria-label="Eaze">
             <img src="${EAZE_LOGO_WHITE_SRC}" alt="Eaze" width="44" height="44" />
           </div>
@@ -790,15 +1078,8 @@ function checkinPage() {
             <img src="${EAZE_LOGO_WHITE_SRC}" alt="" class="score-icon" /> EazeScore Daily
             <span class="score-label-hint" aria-hidden="true">?</span>
           </button>
-          <span class="score-value-row">
-            <span class="score-value" id="score-value">0</span>
-            <span class="score-bonus-text" id="score-bonus-chip" hidden>+${WEEKLY_STREAK_BONUS} bonus</span>
-          </span>
         </div>
-        <div class="score-bar-track">
-          <div class="score-bar-ticks"><span></span><span></span><span></span><span></span><span></span></div>
-          <div class="score-bar-fill" id="score-bar-fill"></div>
-        </div>
+        <span class="score-value" id="score-value">0</span>
         <p class="score-caption" id="score-caption"></p>
       </section>
 
@@ -854,7 +1135,7 @@ function checkinPage() {
         </section>
       </div>
 
-      ${!state.isTester ? `<button id="logout-btn" class="logout-link" type="button">Log out</button>` : ""}
+      <button id="terms-btn" class="logout-link" type="button">Terms and Conditions</button>
     </main>
   `;
 }
@@ -864,11 +1145,19 @@ function checkinPage() {
 // check-in opens at HH:MM" clears itself once true, instead of staying
 // stuck disabled until the user manually reloads.
 let cooldownTimer = null;
+// Ticks the home page's check-in banner once a second while it's showing the
+// darkened "cooldown" state, so the HH:MM:SS countdown actually counts down
+// instead of sitting frozen at whatever it read on the last full render.
+let homeCooldownTimer = null;
 
 function render() {
   if (cooldownTimer) {
     clearInterval(cooldownTimer);
     cooldownTimer = null;
+  }
+  if (homeCooldownTimer) {
+    clearInterval(homeCooldownTimer);
+    homeCooldownTimer = null;
   }
 
   if (state.view === "login") {
@@ -877,24 +1166,49 @@ function render() {
     if (state.showCountrySheet) wireCountrySheetEvents();
     if (state.showTestModal) wireTestModal();
   } else if (state.view === "home") {
-    root.innerHTML = homePage() + (state.showTestModal ? testModeModal() : "");
+    root.innerHTML =
+      homePage() +
+      (state.showTestModal ? testModeModal() : "") +
+      (state.homeInfoModal ? homeInfoModal() : "") +
+      (state.showClaimModal ? claimModal() : "");
     queryEls();
     wireHomeEvents();
     if (state.isTester) wireTesterToolbar();
     if (state.showTestModal) wireTestModal();
+    if (state.homeInfoModal) wireHomeInfoModal();
+    if (state.showClaimModal) wireClaimModal();
+    if (state.claimResult?.ok) spawnConfetti();
     renderHome();
+    if (inCooldown()) {
+      homeCooldownTimer = setInterval(() => {
+        if (!inCooldown()) {
+          clearInterval(homeCooldownTimer);
+          homeCooldownTimer = null;
+          render();
+          return;
+        }
+        const countdownEl = document.getElementById("home-banner-countdown");
+        if (countdownEl) countdownEl.textContent = formatCountdown(parseUtc(state.nextCheckinAt));
+      }, 1000);
+    }
+  } else if (state.view === "terms") {
+    root.innerHTML = termsPage();
+    wireTermsEvents();
+    if (state.isTester) wireTesterToolbar();
   } else {
     root.innerHTML =
       checkinPage() +
       (state.showTestModal ? testModeModal() : "") +
       (state.selectedEntryIdx !== null ? dayDetailModal() : "") +
-      (state.showRulesModal ? rulesModal() : "");
+      (state.showRulesModal ? rulesModal() : "") +
+      (state.showBonusModal ? bonusModal() : "");
     queryEls();
     wireCheckinEvents();
     if (state.isTester) wireTesterToolbar();
     if (state.showTestModal) wireTestModal();
     if (state.selectedEntryIdx !== null) wireDayDetailModal();
     if (state.showRulesModal) wireRulesModal();
+    if (state.showBonusModal) wireBonusModal();
     renderAll();
     if (inCooldown()) {
       cooldownTimer = setInterval(() => {
@@ -1104,10 +1418,25 @@ function logout() {
   render();
 }
 
+// ---------- Terms page wiring ----------
+function wireTermsEvents() {
+  document.getElementById("back-to-home-from-terms-btn")?.addEventListener("click", () => {
+    const returnView = state.termsReturnView;
+    state.view = returnView;
+    render();
+    if (returnView === "home" && !state.isTester && state.phone) loadHomeData(state.phone);
+  });
+}
+
 // ---------- Check-in page wiring ----------
 function wireCheckinEvents() {
   els.saveBtn?.addEventListener("click", handleSave);
-  document.getElementById("logout-btn")?.addEventListener("click", logout);
+
+  document.getElementById("terms-btn")?.addEventListener("click", () => {
+    state.termsReturnView = "checkin";
+    state.view = "terms";
+    render();
+  });
 
   document.getElementById("back-to-home-btn")?.addEventListener("click", () => {
     state.view = "home";
@@ -1152,20 +1481,41 @@ function wireCheckinEvents() {
   });
 }
 
+// Shared by the home banner and both stat-card info popups' CTA — only the
+// banner also logs a CheckinBannerLog row, since that's specifically what
+// that table tracks (see backend/app/routers/checkins.py).
+function navigateToCheckin() {
+  state.view = "checkin";
+  // Only clear the transient mood pick — checkedInToday/nextCheckinAt/
+  // streakDays reflect real (or tester-simulated) state and must not be
+  // force-reset here, or they'd desync from what's actually true until the
+  // fetch below lands.
+  state.selectedMood = null;
+  render();
+  if (!state.isTester && state.phone) loadRealUserData(state.phone);
+}
+
 // ---------- Home page wiring ----------
 function wireHomeEvents() {
-  document.getElementById("logout-btn")?.addEventListener("click", logout);
+  document.getElementById("terms-btn")?.addEventListener("click", () => {
+    state.termsReturnView = "home";
+    state.view = "terms";
+    render();
+  });
+
+  document.getElementById("score-card")?.addEventListener("click", () => {
+    state.homeInfoModal = "score";
+    render();
+  });
+
+  document.getElementById("sessions-card")?.addEventListener("click", () => {
+    state.homeInfoModal = "sessions";
+    render();
+  });
 
   document.getElementById("checkin-banner-btn")?.addEventListener("click", () => {
-    state.view = "checkin";
-    // Only clear the transient mood pick — checkedInToday/nextCheckinAt/
-    // streakDays reflect real (or tester-simulated) state and must not be
-    // force-reset here, or they'd desync from what's actually true until the
-    // fetch below lands.
-    state.selectedMood = null;
-    render();
+    navigateToCheckin();
     if (!state.isTester && state.phone) {
-      loadRealUserData(state.phone);
       // Fire-and-forget — logs this banner tap (see CheckinBannerLog on the
       // backend); never blocks or fails the navigation it's tracking.
       apiPost("/checkins/banner-click", { phone: state.phone }).catch((err) => {
@@ -1173,6 +1523,117 @@ function wireHomeEvents() {
       });
     }
   });
+
+  document.getElementById("claim-card")?.addEventListener("click", () => {
+    state.homeInfoModal = null;
+    state.showClaimModal = true;
+    state.claimResult = null;
+    render();
+  });
+}
+
+// ---------- Home stat-card info modal wiring ----------
+function wireHomeInfoModal() {
+  document.getElementById("home-info-overlay")?.addEventListener("click", (e) => {
+    if (e.target.id !== "home-info-overlay") return;
+    state.homeInfoModal = null;
+    render();
+  });
+  document.getElementById("home-info-close")?.addEventListener("click", () => {
+    state.homeInfoModal = null;
+    render();
+  });
+  document.getElementById("home-info-cta")?.addEventListener("click", () => {
+    state.homeInfoModal = null;
+    navigateToCheckin();
+  });
+}
+
+// ---------- Claim modal wiring ----------
+function closeClaimModal() {
+  state.showClaimModal = false;
+  state.claimResult = null;
+  render();
+}
+
+function wireClaimModal() {
+  document.getElementById("claim-overlay")?.addEventListener("click", (e) => {
+    if (e.target.id !== "claim-overlay") return;
+    closeClaimModal();
+  });
+  document.getElementById("claim-close")?.addEventListener("click", closeClaimModal);
+  document.getElementById("claim-done")?.addEventListener("click", closeClaimModal);
+  document.getElementById("claim-submit")?.addEventListener("click", handleClaimSubmit);
+}
+
+const CONFETTI_COLORS = ["var(--primary-500)", "var(--primary-200)", "var(--success-500)", "var(--secondary-200)", "var(--white-100)"];
+const CONFETTI_PIECE_COUNT = 26;
+
+// Fires once per successful claim render (see the render() dispatcher) —
+// generates fresh pieces every time rather than reusing a cached template,
+// so the burst looks a little different on every claim.
+function spawnConfetti() {
+  const container = document.getElementById("claim-confetti");
+  if (!container) return;
+  const frag = document.createDocumentFragment();
+  for (let i = 0; i < CONFETTI_PIECE_COUNT; i++) {
+    const piece = document.createElement("span");
+    piece.className = "confetti-piece";
+    piece.style.setProperty("--x", `${Math.round(Math.random() * 100)}%`);
+    piece.style.setProperty("--drift", `${Math.round((Math.random() - 0.5) * 160)}px`);
+    piece.style.setProperty("--rot", `${Math.round(Math.random() * 540)}deg`);
+    piece.style.setProperty("--dur", `${(1.1 + Math.random() * 0.9).toFixed(2)}s`);
+    piece.style.setProperty("--delay", `${(Math.random() * 0.35).toFixed(2)}s`);
+    piece.style.setProperty("--piece-color", CONFETTI_COLORS[i % CONFETTI_COLORS.length]);
+    frag.appendChild(piece);
+  }
+  container.appendChild(frag);
+}
+
+// Always empties the full balance — see backend/app/routers/eaze_score.py's
+// claim_coins, which deducts the ledger before even attempting the coin
+// transfer, so EazeScore resets to 0 regardless of whether delivery
+// succeeds. Testers have no real backend identity, so their claim is
+// simulated locally instead of hitting the API.
+async function handleClaimSubmit() {
+  if (state.eazeScore <= 0 || state.claiming) return;
+  const coins = computeCoins(state.eazeScore);
+
+  if (state.isTester) {
+    state.eazeScore = 0;
+    state.claimResult = {
+      ok: true,
+      coins,
+      message: "Simulated claim (tester mode) — no real coins were sent.",
+    };
+    render();
+    return;
+  }
+
+  state.claiming = true;
+  render();
+  try {
+    const claim = await apiPost("/eaze-score/claim", { phone: state.phone });
+    const ok = claim.status === "mock_success" || claim.status === "submitted";
+    state.eazeScore = 0;
+    state.claimResult = {
+      ok,
+      coins: claim.coins_requested,
+      message: ok
+        ? "Your EazeScore has been converted and reset to 0."
+        : "Your EazeScore was reset to 0, but the coins couldn't be delivered yet — this has been flagged for follow-up.",
+    };
+  } catch (err) {
+    console.error("Claim failed", err);
+    state.claimResult = {
+      ok: false,
+      coins,
+      message: err.message || "Something went wrong and your claim wasn't recorded. Please try again.",
+    };
+  } finally {
+    state.claiming = false;
+    render();
+  }
 }
 
 // ---------- Rules modal wiring ----------
@@ -1184,6 +1645,22 @@ function wireRulesModal() {
   });
   document.getElementById("rules-close")?.addEventListener("click", () => {
     state.showRulesModal = false;
+    render();
+  });
+}
+
+function wireBonusModal() {
+  document.getElementById("bonus-overlay")?.addEventListener("click", (e) => {
+    if (e.target.id !== "bonus-overlay") return;
+    state.showBonusModal = false;
+    render();
+  });
+  document.getElementById("bonus-close")?.addEventListener("click", () => {
+    state.showBonusModal = false;
+    render();
+  });
+  document.getElementById("bonus-done")?.addEventListener("click", () => {
+    state.showBonusModal = false;
     render();
   });
 }
@@ -1411,52 +1888,34 @@ function renderStreak() {
     count === 0 ? "Start today" : `<span class="stat-num">${count}</span> day streak`;
 }
 
-// Home page's "cumulative EazeScore" card — the lifetime total, with the
-// bar showing progress toward the next 7-day streak bonus. Unchanged from
-// the score bar/caption logic this app always had; it just lives on the
-// home page now instead of the check-in page.
+// Home page's "EazeScore" card — the current claimable balance (resets to 0
+// on claim, see handleClaimSubmit), not a lifetime total; tapping the card
+// (see wireHomeEvents) surfaces the earn/streak-bonus/claim explanation that
+// used to live in the progress bar's caption.
 function renderCumulativeScore() {
-  const count = currentStreakCount();
-  const pct = Math.round((Math.min(count, 7) / 7) * 100);
   els.scoreValue.textContent = state.eazeScore;
-  els.scoreBarFill.style.width = `${pct}%`;
-  els.scoreCaption.innerHTML =
-    count >= 7
-      ? "Full week complete — weekly bonus earned"
-      : `<span class="stat-num">${count}</span>/<span class="stat-num">7</span> days checked in this week · +<span class="stat-num">${WEEKLY_STREAK_BONUS}</span> bonus at <span class="stat-num">7</span>`;
-
-  // One-shot celebration: show it for this render only, then consume the flag
-  // so it doesn't reappear on unrelated re-renders.
-  els.scoreBonusChip.hidden = !state.lastBonusAwarded;
-  if (state.lastBonusAwarded) {
-    state.lastBonusAwarded = false;
-    els.scoreBarFill.classList.add("just-bonus");
-    setTimeout(() => els.scoreBarFill.classList.remove("just-bonus"), 700);
-  }
 }
 
 // Check-in page's "EazeScore Daily" card — today's contribution only (0
 // before saving, 10 normally, 60 on a bonus day), so it reads as "what did
-// I just earn" rather than duplicating the lifetime total shown on home.
+// I just earn" rather than duplicating the balance shown on home.
 // Bar fill is today's amount out of the max a single day can award (10 base
 // + 50 bonus), so a bonus day visibly fills the bar all the way.
 const MAX_DAILY_SCORE = POINTS_PER_CHECKIN + WEEKLY_STREAK_BONUS;
 
 function renderDailyScore() {
-  const pct = Math.round((Math.min(state.todayEarned, MAX_DAILY_SCORE) / MAX_DAILY_SCORE) * 100);
   els.scoreValue.textContent = state.todayEarned;
-  els.scoreBarFill.style.width = `${pct}%`;
   els.scoreCaption.textContent = !state.checkedInToday
     ? "Check in today to add to your EazeScore"
     : state.lastBonusAwarded || state.todayEarned >= MAX_DAILY_SCORE
     ? `+${state.todayEarned} added — includes today's streak bonus`
     : `+${state.todayEarned} added to your EazeScore`;
 
-  els.scoreBonusChip.hidden = !state.lastBonusAwarded;
   if (state.lastBonusAwarded) {
     state.lastBonusAwarded = false;
-    els.scoreBarFill.classList.add("just-bonus");
-    setTimeout(() => els.scoreBarFill.classList.remove("just-bonus"), 700);
+    // Bar's gone — the celebratory pulse now plays on the number itself.
+    els.scoreValue.classList.add("just-bonus");
+    setTimeout(() => els.scoreValue.classList.remove("just-bonus"), 700);
   }
 }
 
@@ -1505,15 +1964,21 @@ async function handleSave() {
         if (todayIdx !== -1) state.streakDays[todayIdx] = true;
       }
 
-      state.eazeScore = result.score.earned;
+      // Claimable balance, not lifetime earned — see computeStateFromApi.
+      state.eazeScore = result.score.available;
       state.todayEarned = result.score.today_earned;
       state.sessionsCount = result.score.sessions_count;
       state.lastBonusAwarded = result.streak_bonus_awarded;
+      state.showBonusModal = result.streak_bonus_awarded;
       state.checkedInToday = true;
       state.nextCheckinAt = result.score.next_checkin_at;
       state.submitting = false;
 
-      renderAll();
+      // Full render (not just renderAll) when the bonus popup needs to be
+      // injected into the DOM — renderAll only patches existing elements,
+      // it never appends the modal overlay itself.
+      if (state.showBonusModal) render();
+      else renderAll();
       renderReaffirm(message);
 
       const dot = els.streakDots.querySelector(`[data-idx="${todayIdx}"]`);
@@ -1551,6 +2016,7 @@ async function handleSave() {
     if (todayIdx !== -1) state.streakDays[todayIdx] = true;
     streakAfter = currentStreakCount();
     state.lastBonusAwarded = streakBefore < 7 && streakAfter >= 7;
+    state.showBonusModal = state.lastBonusAwarded;
   } else {
     state.lastBonusAwarded = false;
   }
@@ -1568,7 +2034,11 @@ async function handleSave() {
 
   state.submitting = false;
 
-  renderAll();
+  // Full render (not just renderAll) when the bonus popup needs to be
+  // injected into the DOM — renderAll only patches existing elements, it
+  // never appends the modal overlay itself.
+  if (state.showBonusModal) render();
+  else renderAll();
   renderReaffirm(message);
 
   const dot = els.streakDots.querySelector(`[data-idx="${todayIdx}"]`);

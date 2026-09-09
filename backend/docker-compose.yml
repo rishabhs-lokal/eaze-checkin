@@ -31,6 +31,12 @@ services:
     build: .
     ports:
       - "8000:8000"
+    # Local secrets (EAZE_COINS_AUTH_KEY, etc.) — see .env / .env.example.
+    # environment: below still wins over anything with the same name in
+    # .env, so the container-network DATABASE_URL here is never at risk of
+    # being shadowed by the host-oriented one in .env.
+    env_file:
+      - .env
     environment:
       APP_ENV: local
       DATABASE_URL: postgresql://eaze:eaze@db:5432/eaze
