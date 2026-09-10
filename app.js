@@ -468,8 +468,32 @@ const state = {
   termsReturnView: "home",
 };
 
-(function restoreSession() {
+const sessionReady = (async function restoreSession() {
   const saved = localStorage.getItem("checkin_session");
+
+  // Banner entry — the real production path: users arrive via a banner link
+  // elsewhere in the Eaze ecosystem carrying the real Eaze platform user id
+  // and phone as URL params, no typed-phone login screen involved. Only
+  // honored when there's no saved session yet, so a bookmarked/revisited
+  // banner URL doesn't reprocess on every later visit.
+  const bannerParams = new URLSearchParams(window.location.search);
+  const bannerUserId = bannerParams.get("user_id");
+  const bannerPhone = bannerParams.get("phone");
+  if (bannerUserId && bannerPhone && !saved) {
+    state.phone = bannerPhone;
+    state.view = "home";
+    try {
+      await apiPost("/auth/login", { phone: bannerPhone, eaze_user_id: bannerUserId });
+      localStorage.setItem("checkin_session", JSON.stringify({ phone: bannerPhone, country: state.country }));
+    } catch (err) {
+      console.error("Banner login failed", err);
+      state.phone = "";
+      state.view = "login";
+      render();
+    }
+    return;
+  }
+
   if (!saved) return;
   try {
     const parsed = JSON.parse(saved);
@@ -1823,8 +1847,11 @@ async function handleSave() {
 
 render();
 
-// Restored session: initial render above shows the clean shell, this
-// fetches the user's actual persisted score/history.
-if (state.view === "home" && state.phone) {
-  loadHomeData(state.phone);
-}
+// Restored session (including a fresh banner login) for a real user:
+// initial render above shows the clean shell, this fetches their actual
+// persisted score/history once restoreSession has settled.
+sessionReady.then(() => {
+  if (state.view === "home" && state.phone) {
+    loadHomeData(state.phone);
+  }
+});
