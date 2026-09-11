@@ -22,6 +22,30 @@ spec:
         runAsNonRoot: true
         runAsUser: 1000
         runAsGroup: 1000
+      # Runs on every rollout, in every replica's pod — safe because
+      # scripts/migrate.py wraps `alembic upgrade head` in a Postgres
+      # advisory lock, so only one pod actually applies a pending migration
+      # at a time; the rest just find the database already at head and
+      # exit immediately. Avoids needing a separately-permissioned
+      # Kubernetes Job for this (see backend/k8s/migration-job.yaml, kept
+      # as a standalone alternative for environments that do allow it).
+      initContainers:
+        - name: migrate
+          image: eaze-backend:latest # replace with your built & pushed image tag
+          imagePullPolicy: IfNotPresent
+          command: ["./scripts/migrate.sh"]
+          envFrom:
+            - configMapRef:
+                name: eaze-api-config
+            - secretRef:
+                name: eaze-api-secrets
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
       containers:
         - name: eaze-api
           image: eaze-backend:latest # replace with your built & pushed image tag
