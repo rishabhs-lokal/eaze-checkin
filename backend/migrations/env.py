@@ -20,8 +20,12 @@ target_metadata = Base.metadata
 
 # Same Settings source the app itself uses — one DATABASE_URL, no drift
 # between what migrations run against and what the app connects to.
+# set_main_option stores this in a configparser object, which treats "%" as
+# interpolation syntax (expecting "%%" for a literal percent) — a
+# URL-encoded password (e.g. "%24" for "$") would otherwise raise
+# "invalid interpolation syntax" here instead of connecting.
 settings = get_settings()
-config.set_main_option("sqlalchemy.url", settings.async_database_url)
+config.set_main_option("sqlalchemy.url", settings.async_database_url.replace("%", "%%"))
 
 
 def run_migrations_offline() -> None:
