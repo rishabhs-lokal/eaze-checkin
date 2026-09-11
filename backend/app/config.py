@@ -40,6 +40,15 @@ class Settings(BaseSettings):
     # mirrored anywhere else; this app's own scoring is unaffected either way.
     eaze_level_up_api_url: str | None = "http://host.docker.internal:3000"
 
+    # Fallback phone lookup (Redash query 20342, mirrors production
+    # users.mobile_no into the analytics warehouse) for banner links that
+    # hand over eaze_user_id but omit phone — see
+    # app/services/redash.py. Unset key -> the lookup is skipped entirely
+    # and the frontend falls back to the typed-phone login screen.
+    redash_api_key: str | None = None
+    redash_base_url: str = "https://analytics.getlokalapp.com"
+    redash_phone_lookup_query_id: int = 20342
+
     @property
     def async_database_url(self) -> str:
         url = self.database_url

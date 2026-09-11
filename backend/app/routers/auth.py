@@ -4,11 +4,24 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
 from app.models import LoginLog, User
-from app.schemas import LoginRequest, UserRead
-from app.services import eaze_score
+from app.schemas import LoginRequest, PhoneResolveResponse, UserRead
+from app.services import eaze_score, redash
 from app.services.users import get_or_create_user
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+
+@router.get("/resolve-phone/{eaze_user_id}", response_model=PhoneResolveResponse)
+async def resolve_phone(eaze_user_id: str) -> PhoneResolveResponse:
+    """Fallback for banner links that hand over eaze_user_id but omit phone
+    (see app.js restoreSession) — looks the phone up via the shared Redash
+    query that mirrors production users.mobile_no into the analytics
+    warehouse. Always 200s with phone: null rather than 404 when nothing is
+    found, so the frontend can treat "not found" and "lookup unavailable"
+    identically and fall back to the typed-phone login screen either way.
+    """
+    phone = await redash.lookup_phone_by_eaze_user_id(eaze_user_id)
+    return PhoneResolveResponse(phone=phone)
 
 
 @router.post("/login", response_model=UserRead)

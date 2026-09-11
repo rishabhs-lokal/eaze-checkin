@@ -20,6 +20,12 @@ class LoginRequest(BaseModel):
     eaze_user_id: str | None = Field(default=None, max_length=100)
 
 
+class PhoneResolveResponse(BaseModel):
+    # None when the lookup service is unconfigured, the id isn't found, or
+    # the lookup itself failed/timed out — see app/services/redash.py.
+    phone: str | None
+
+
 class CheckInCreate(BaseModel):
     phone: str = Field(min_length=1, max_length=20)
     mood: int = Field(ge=1, le=5)
