@@ -941,7 +941,9 @@ button.score-label {
   background: var(--white-10);
   padding: 10px 14px;
   font-family: var(--font-ui);
-  font-size: 14px;
+  /* iOS Safari auto-zooms the whole page on focus for any text input under
+     16px, regardless of the viewport meta tag — stay at/above it here. */
+  font-size: 16px;
   color: var(--white-100);
   outline: none;
 }
