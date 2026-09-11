@@ -19,7 +19,11 @@ services:
   # succeed before starting, mirroring the migration Job that runs ahead of
   # the Deployment rollout in Kubernetes.
   migrate:
-    build: .
+    # Context is the repo root, not this directory — backend/Dockerfile
+    # also bundles the frontend's static files into the image.
+    build:
+      context: ..
+      dockerfile: backend/Dockerfile
     command: ["./scripts/migrate.sh"]
     environment:
       DATABASE_URL: postgresql://eaze:eaze@db:5432/eaze
@@ -28,7 +32,11 @@ services:
         condition: service_healthy
 
   app:
-    build: .
+    # Context is the repo root, not this directory — backend/Dockerfile
+    # also bundles the frontend's static files into the image.
+    build:
+      context: ..
+      dockerfile: backend/Dockerfile
     ports:
       - "8000:8000"
     # Local secrets (EAZE_COINS_AUTH_KEY, etc.) — see .env / .env.example.

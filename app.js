@@ -263,7 +263,11 @@ function computeCoins(score) {
 // ---------- Real backend integration ----------
 // Every user hits the actual API so EazeScore and check-in history survive
 // a refresh instead of resetting to scripted demo data every load.
-const API_BASE = "https://eaze-eaze-checkin.eazeapp.com";
+// Empty/relative: the backend now serves this frontend itself (see
+// backend/app/main.py's StaticFiles mount), so API calls are always
+// same-origin — in local docker-compose, staging, or production alike —
+// with no per-environment branching needed.
+const API_BASE = "";
 
 async function apiGet(path) {
   const res = await fetch(`${API_BASE}${path}`);

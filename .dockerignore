@@ -1,0 +1,10 @@
+# Applies to the backend image build, whose context is this repo root
+# (see backend/Dockerfile) — keep secrets and dev cruft out of it.
+.git
+.claude
+.DS_Store
+backend/.env
+backend/.venv
+backend/venv
+**/__pycache__
+**/*.pyc
