@@ -473,12 +473,25 @@ const sessionReady = (async function restoreSession() {
 
   // Banner entry — the real production path: users arrive via a banner link
   // elsewhere in the Eaze ecosystem carrying the real Eaze platform user id
-  // and phone as URL params, no typed-phone login screen involved. Only
-  // honored when there's no saved session yet, so a bookmarked/revisited
-  // banner URL doesn't reprocess on every later visit.
+  // and (usually) phone as URL params, no typed-phone login screen involved.
+  // Only honored when there's no saved session yet, so a bookmarked/
+  // revisited banner URL doesn't reprocess on every later visit.
   const bannerParams = new URLSearchParams(window.location.search);
   const bannerUserId = bannerParams.get("user_id");
-  const bannerPhone = bannerParams.get("phone");
+  let bannerPhone = bannerParams.get("phone");
+  if (bannerUserId && !saved) {
+    // The banner link doesn't always include phone — fall back to resolving
+    // it server-side from eaze_user_id (see /auth/resolve-phone) before
+    // giving up on banner entry entirely.
+    if (!bannerPhone) {
+      try {
+        const resolved = await apiGet(`/auth/resolve-phone/${encodeURIComponent(bannerUserId)}`);
+        bannerPhone = resolved.phone;
+      } catch (err) {
+        console.error("Phone lookup for banner entry failed", err);
+      }
+    }
+  }
   if (bannerUserId && bannerPhone && !saved) {
     state.phone = bannerPhone;
     state.view = "home";
@@ -493,6 +506,8 @@ const sessionReady = (async function restoreSession() {
     }
     return;
   }
+  // bannerUserId present but no phone (param or lookup) resolved — falls
+  // through to the typed-phone login screen below, same as no banner at all.
 
   if (!saved) return;
   try {
