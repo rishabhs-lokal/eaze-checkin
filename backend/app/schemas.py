@@ -8,26 +8,18 @@ class UserRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID
-    phone: str
-    eaze_user_id: str | None
+    eaze_user_id: str
     created_at: datetime
 
 
 class LoginRequest(BaseModel):
-    phone: str = Field(min_length=1, max_length=20)
-    # Supplied directly by the banner/host app — never looked up. See
-    # app/routers/auth.py for why no external lookup is involved.
-    eaze_user_id: str | None = Field(default=None, max_length=100)
-
-
-class PhoneResolveResponse(BaseModel):
-    # None when the lookup service is unconfigured, the id isn't found, or
-    # the lookup itself failed/timed out — see app/services/redash.py.
-    phone: str | None
+    # Supplied directly by the banner link (?user_id=...) — the sole
+    # identifier for this app, never looked up or guessed.
+    eaze_user_id: str = Field(min_length=1, max_length=100)
 
 
 class CheckInCreate(BaseModel):
-    phone: str = Field(min_length=1, max_length=20)
+    eaze_user_id: str = Field(min_length=1, max_length=100)
     mood: int = Field(ge=1, le=5)
     note: str | None = Field(default=None, max_length=2000)
 
@@ -66,11 +58,11 @@ class CheckInResult(BaseModel):
 
 
 class BannerClickCreate(BaseModel):
-    phone: str = Field(min_length=1, max_length=20)
+    eaze_user_id: str = Field(min_length=1, max_length=100)
 
 
 class ClaimCreate(BaseModel):
-    phone: str = Field(min_length=1, max_length=20)
+    eaze_user_id: str = Field(min_length=1, max_length=100)
     # No amount — a claim always takes the full available EazeScore balance,
     # converted via the tiered rate, never a partial user-chosen amount.
 

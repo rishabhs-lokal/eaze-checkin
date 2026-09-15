@@ -2,10 +2,10 @@
 cross-app ledger (POST /api/score/events) — the single source of truth both
 apps' "lifetime EazeScore" totals are meant to read from.
 
-eaze_user_id here is the phone number, passed through unchanged — no
-normalization, no lookup. eaze-level-up's own ledger keys on the same raw
-value (the number typed at its login screen), so the two must match exactly
-or the same person's activity silently splits into two identities.
+eaze_user_id here is the real Eaze platform account id, passed through
+unchanged — no normalization, no lookup. eaze-level-up's own ledger must key
+on this same value, or the same person's activity silently splits into two
+identities.
 
 Best-effort only: a check-in must never fail, and the user must never see an
 error, because a *different app's* API was slow or unreachable. Every

@@ -12,9 +12,9 @@ from app.services import coin_transfer, eaze_score
 router = APIRouter(prefix="/eaze-score", tags=["eaze-score"])
 
 
-@router.get("/{phone}", response_model=EazeScoreState)
-async def get_eaze_score(phone: str, db: AsyncSession = Depends(get_db)) -> EazeScoreState:
-    result = await db.execute(select(User).where(User.phone == phone))
+@router.get("/{eaze_user_id}", response_model=EazeScoreState)
+async def get_eaze_score(eaze_user_id: str, db: AsyncSession = Depends(get_db)) -> EazeScoreState:
+    result = await db.execute(select(User).where(User.eaze_user_id == eaze_user_id))
     user = result.scalar_one_or_none()
     if user is None:
         return EazeScoreState(earned=0, claimed=0, available=0, streak=0)
@@ -60,7 +60,7 @@ async def get_eaze_score(phone: str, db: AsyncSession = Depends(get_db)) -> Eaze
 
 @router.post("/claim", response_model=ClaimRead, status_code=201)
 async def claim_coins(payload: ClaimCreate, db: AsyncSession = Depends(get_db)) -> CoinClaim:
-    result = await db.execute(select(User).where(User.phone == payload.phone))
+    result = await db.execute(select(User).where(User.eaze_user_id == payload.eaze_user_id))
     user = result.scalar_one_or_none()
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")
@@ -83,30 +83,19 @@ async def claim_coins(payload: ClaimCreate, db: AsyncSession = Depends(get_db)) 
     # untouched lifetime audit trail, only available drops to exactly 0.
     db.add(EazeScoreEvent(user_id=user.id, delta=-available, reason="claim"))
 
+    # eaze_user_id is always present now (the sole login identifier — see
+    # User.eaze_user_id), so every claim attempts a real transfer. The old
+    # "identity_unresolved" status is still a valid historical value in
+    # coin_claims.status (see migration 0016) but new claims never produce it.
     status: str
     provider_ref: str | None
     notes: str | None
     error_message: str | None = None
-
-    if not user.eaze_user_id:
-        # Distinct from failed_provider: this never even attempted a transfer
-        # call — the user's identity was never resolved (no banner login yet)
-        # — so it needs a human to follow up (get them through the banner
-        # flow, or resolve manually), not an automatic retry.
-        status, provider_ref, notes = "identity_unresolved", None, None
-        error_message = (
-            "This account's Eaze identity hasn't been verified yet, so this claim could "
-            "not be sent — it needs manual follow-up, not a retry. Ask the user to open "
-            "this app from the Eaze banner at least once, or resolve eaze_user_id manually."
-        )
-    else:
-        try:
-            status, provider_ref, notes = await coin_transfer.transfer_coins(
-                user.eaze_user_id, coins
-            )
-        except RuntimeError as exc:
-            status, provider_ref, notes = "failed_provider", None, None
-            error_message = str(exc)
+    try:
+        status, provider_ref, notes = await coin_transfer.transfer_coins(user.eaze_user_id, coins)
+    except RuntimeError as exc:
+        status, provider_ref, notes = "failed_provider", None, None
+        error_message = str(exc)
 
     claim = CoinClaim(
         user_id=user.id,

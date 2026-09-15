@@ -21,8 +21,8 @@ Try it:
 curl http://localhost:8000/healthz
 curl -X POST http://localhost:8000/checkins \
   -H "Content-Type: application/json" \
-  -d '{"phone":"9999999999","mood":5,"note":"feeling good"}'
-curl http://localhost:8000/checkins/9999999999
+  -d '{"eaze_user_id":"test_user_1","mood":5,"note":"feeling good"}'
+curl http://localhost:8000/checkins/test_user_1
 ```
 
 Config is read from environment variables (see `.env.example`); copy it to

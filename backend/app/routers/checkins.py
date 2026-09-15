@@ -26,7 +26,7 @@ router = APIRouter(prefix="/checkins", tags=["checkins"])
 
 @router.post("", response_model=CheckInResult, status_code=201)
 async def create_check_in(payload: CheckInCreate, db: AsyncSession = Depends(get_db)) -> CheckInResult:
-    user = await get_or_create_user(db, payload.phone)
+    user = await get_or_create_user(db, payload.eaze_user_id)
 
     # Naive UTC, matching how created_at is stored (see get_today_earned) —
     # comparisons against DB timestamps need both sides naive.
@@ -71,7 +71,6 @@ async def create_check_in(payload: CheckInCreate, db: AsyncSession = Depends(get
     db.add(
         RetentionLog(
             user_id=user.id,
-            phone_number=payload.phone,
             eazescore_earned=earned_this_visit,
             log_date=ist_instant.date(),
             log_time=ist_instant.time(),
@@ -83,7 +82,6 @@ async def create_check_in(payload: CheckInCreate, db: AsyncSession = Depends(get
     db.add(
         MoodLog(
             user_id=user.id,
-            phone_number=payload.phone,
             mood=payload.mood,
             log_date=ist_instant.date(),
             log_time=ist_instant.time(),
@@ -96,7 +94,6 @@ async def create_check_in(payload: CheckInCreate, db: AsyncSession = Depends(get
     db.add(
         StreakLog(
             user_id=user.id,
-            phone_number=payload.phone,
             streak=streak_after,
             mood_selection_count=prior_mood_selection_count + 1,
             log_date=ist_instant.date(),
@@ -110,7 +107,6 @@ async def create_check_in(payload: CheckInCreate, db: AsyncSession = Depends(get
     db.add(
         EazeScoreCumulativeLog(
             user_id=user.id,
-            phone_number=payload.phone,
             cumulative_eazescore=prior_earned + earned_this_visit,
             sessions_count=prior_mood_selection_count + 1,
             log_date=ist_instant.date(),
@@ -124,7 +120,6 @@ async def create_check_in(payload: CheckInCreate, db: AsyncSession = Depends(get
         db.add(
             TextLog(
                 user_id=user.id,
-                phone_number=payload.phone,
                 engaged_with_text=bool(payload.note),
                 log_date=ist_instant.date(),
                 log_time=ist_instant.time(),
@@ -136,14 +131,14 @@ async def create_check_in(payload: CheckInCreate, db: AsyncSession = Depends(get
 
     # Mirrored into the shared cross-app ledger after the local commit
     # succeeds, so this app's own record of the check-in is never at risk of
-    # being lost to a slow/unreachable dependency. eaze_user_id is the raw
-    # phone number, unchanged — must match eaze-level-up's key exactly.
+    # being lost to a slow/unreachable dependency. Uses the real eaze_user_id
+    # now (previously the raw phone number) — must match eaze-level-up's key.
     await shared_ledger.report_to_shared_ledger(
-        eaze_user_id=payload.phone, event_type="daily_checkin", points=eaze_score.POINTS_PER_CHECKIN,
+        eaze_user_id=user.eaze_user_id, event_type="daily_checkin", points=eaze_score.POINTS_PER_CHECKIN,
     )
     if bonus_awarded:
         await shared_ledger.report_to_shared_ledger(
-            eaze_user_id=payload.phone, event_type="streak_bonus", points=eaze_score.WEEKLY_STREAK_BONUS,
+            eaze_user_id=user.eaze_user_id, event_type="streak_bonus", points=eaze_score.WEEKLY_STREAK_BONUS,
         )
 
     earned, claimed = await eaze_score.get_score_totals(db, user.id)
@@ -171,12 +166,11 @@ async def log_banner_click(payload: BannerClickCreate, db: AsyncSession = Depend
     today's check-in?" banner (see CheckinBannerLog) — called by the
     frontend right at that click, real users only. Fire-and-forget by
     design: this never blocks or fails the navigation it's tracking."""
-    user = await get_or_create_user(db, payload.phone)
+    user = await get_or_create_user(db, payload.eaze_user_id)
     ist_instant = eaze_score.ist_now()
     db.add(
         CheckinBannerLog(
             user_id=user.id,
-            phone_number=payload.phone,
             log_date=ist_instant.date(),
             log_time=ist_instant.time(),
         )
@@ -190,12 +184,12 @@ async def log_banner_click(payload: BannerClickCreate, db: AsyncSession = Depend
 CHECKIN_HISTORY_LIMIT = 200
 
 
-@router.get("/{phone}", response_model=list[CheckInRead])
-async def list_check_ins(phone: str, db: AsyncSession = Depends(get_db)) -> list[CheckIn]:
+@router.get("/{eaze_user_id}", response_model=list[CheckInRead])
+async def list_check_ins(eaze_user_id: str, db: AsyncSession = Depends(get_db)) -> list[CheckIn]:
     result = await db.execute(
         select(CheckIn)
         .join(User)
-        .where(User.phone == phone)
+        .where(User.eaze_user_id == eaze_user_id)
         .order_by(CheckIn.created_at.desc())
         .limit(CHECKIN_HISTORY_LIMIT)
     )

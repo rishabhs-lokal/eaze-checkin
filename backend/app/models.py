@@ -28,11 +28,11 @@ class User(Base):
     __tablename__ = "users"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    phone: Mapped[str] = mapped_column(String(20), unique=True, nullable=False, index=True)
-    # Real Eaze account id — resolved via a phone lookup at registration time.
-    # Nullable: stays null until that lookup succeeds. Required to address the
-    # real coin-transfer API, which is keyed by this id, not phone.
-    eaze_user_id: Mapped[str | None] = mapped_column(String(100), unique=True, nullable=True)
+    # The real Eaze platform account id — the sole identifier for this app.
+    # Supplied directly by the banner link (?user_id=...) at login; no phone
+    # number is ever collected or stored. Required to address the real
+    # coin-transfer API, which is keyed by this id.
+    eaze_user_id: Mapped[str] = mapped_column(String(100), unique=True, nullable=False, index=True)
     display_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
     # One-time-ever flag, same pattern as a permanent eligibility snapshot —
     # set the instant the bonus is awarded, never re-derived, so it can never
@@ -167,17 +167,14 @@ class CoinClaim(Base):
 
 
 class LoginEvent(Base):
-    """One row per successful phone-number login — separate from the score
-    ledger, pure activity tracking."""
+    """One row per successful login — separate from the score ledger, pure
+    activity tracking. Currently unwired (no router writes to this table)."""
 
     __tablename__ = "login_events"
-    __table_args__ = (Index("ix_login_events_phone_number_created_at", "phone_number", "created_at"),)
+    __table_args__ = (Index("ix_login_events_eaze_user_id_created_at", "eaze_user_id", "created_at"),)
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    # Nullable like users.eaze_user_id — a login can happen before identity
-    # resolution succeeds.
-    eaze_user_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    phone_number: Mapped[str] = mapped_column(String(20), nullable=False)
+    eaze_user_id: Mapped[str] = mapped_column(String(100), nullable=False)
     login_at: Mapped[datetime] = mapped_column(nullable=False)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now(), nullable=False)
 
@@ -198,7 +195,6 @@ class LoginLog(Base):
     user_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False
     )
-    phone_number: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
     first_login_date: Mapped[date] = mapped_column(Date, nullable=False)
     first_login_time: Mapped[time] = mapped_column(Time, nullable=False)
 
@@ -215,12 +211,10 @@ class RetentionLog(Base):
     __tablename__ = "retention_logs"
     __table_args__ = (
         Index("ix_retention_logs_user_id_log_date", "user_id", "log_date"),
-        Index("ix_retention_logs_phone_number", "phone_number"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    phone_number: Mapped[str] = mapped_column(String(20), nullable=False)
     eazescore_earned: Mapped[int] = mapped_column(nullable=False)
     log_date: Mapped[date] = mapped_column(Date, nullable=False)
     log_time: Mapped[time] = mapped_column(Time, nullable=False)
@@ -238,12 +232,10 @@ class TextLog(Base):
     __tablename__ = "text_log"
     __table_args__ = (
         Index("ix_text_log_user_id_log_date", "user_id", "log_date"),
-        Index("ix_text_log_phone_number", "phone_number"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    phone_number: Mapped[str] = mapped_column(String(20), nullable=False)
     engaged_with_text: Mapped[bool] = mapped_column(Boolean, nullable=False)
     log_date: Mapped[date] = mapped_column(Date, nullable=False)
     log_time: Mapped[time] = mapped_column(Time, nullable=False)
@@ -260,12 +252,10 @@ class MoodLog(Base):
     __table_args__ = (
         CheckConstraint("mood BETWEEN 1 AND 5", name="ck_mood_log_mood_range"),
         Index("ix_mood_log_user_id_log_date", "user_id", "log_date"),
-        Index("ix_mood_log_phone_number", "phone_number"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    phone_number: Mapped[str] = mapped_column(String(20), nullable=False)
     mood: Mapped[int] = mapped_column(nullable=False)
     log_date: Mapped[date] = mapped_column(Date, nullable=False)
     log_time: Mapped[time] = mapped_column(Time, nullable=False)
@@ -282,12 +272,10 @@ class StreakLog(Base):
     __tablename__ = "streak_log"
     __table_args__ = (
         Index("ix_streak_log_user_id_log_date", "user_id", "log_date"),
-        Index("ix_streak_log_phone_number", "phone_number"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    phone_number: Mapped[str] = mapped_column(String(20), nullable=False)
     streak: Mapped[int] = mapped_column(nullable=False)
     mood_selection_count: Mapped[int] = mapped_column(nullable=False)
     log_date: Mapped[date] = mapped_column(Date, nullable=False)
@@ -305,12 +293,10 @@ class EazeScoreCumulativeLog(Base):
     __tablename__ = "eazescore_cumulative_logs"
     __table_args__ = (
         Index("ix_eazescore_cumulative_logs_user_id", "user_id"),
-        Index("ix_eazescore_cumulative_logs_phone_number", "phone_number"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    phone_number: Mapped[str] = mapped_column(String(20), nullable=False)
     cumulative_eazescore: Mapped[int] = mapped_column(nullable=False)
     sessions_count: Mapped[int] = mapped_column(nullable=False)
     log_date: Mapped[date] = mapped_column(Date, nullable=False)
@@ -330,12 +316,10 @@ class CheckinBannerLog(Base):
     __tablename__ = "checkin_banner_log"
     __table_args__ = (
         Index("ix_checkin_banner_log_user_id_log_date", "user_id", "log_date"),
-        Index("ix_checkin_banner_log_phone_number", "phone_number"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    phone_number: Mapped[str] = mapped_column(String(20), nullable=False)
     log_date: Mapped[date] = mapped_column(Date, nullable=False)
     log_time: Mapped[time] = mapped_column(Time, nullable=False)
 

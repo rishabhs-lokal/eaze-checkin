@@ -1,9 +1,9 @@
 // Daily Check-in — Eaze
-// Login, modeled on the actual Dostt Free Rewards app (root.innerHTML render
-// loop, animated login button, country bottom sheet) and reskinned with the
-// Eaze design tokens. Every user hits the real backend in backend/ (see
-// "Real backend integration" below) — EazeScore and check-in history
-// persist for real.
+// root.innerHTML render loop, reskinned with the Eaze design tokens. Every
+// user hits the real backend in backend/ (see "Real backend integration"
+// below) — EazeScore and check-in history persist for real. Entry is
+// banner-only: the host Eaze app hands over ?user_id= as a URL param, no
+// phone number is ever collected or typed.
 
 const MOODS = [
   { value: 1, emoji: "😞", label: "Rough" },
@@ -53,21 +53,6 @@ const REAFFIRM_MESSAGES = {
     "Hold onto this feeling for a bit. Days like this are proof of what's possible.",
   ],
 };
-
-const COUNTRIES = [
-  { flag: "🇮🇳", name: "India", code: "+91" },
-  { flag: "🇸🇦", name: "Saudi Arabia", code: "+966" },
-  { flag: "🇳🇵", name: "Nepal", code: "+977" },
-  { flag: "🇧🇩", name: "Bangladesh", code: "+880" },
-  { flag: "🇧🇭", name: "Bahrain", code: "+973" },
-  { flag: "🇶🇦", name: "Qatar", code: "+974" },
-  { flag: "🇴🇲", name: "Oman", code: "+968" },
-  { flag: "🇦🇪", name: "UAE", code: "+971" },
-  { flag: "🇰🇼", name: "Kuwait", code: "+965" },
-  { flag: "🇱🇰", name: "Sri Lanka", code: "+94" },
-  { flag: "🇬🇧", name: "United Kingdom", code: "+44" },
-  { flag: "🇺🇸", name: "United States", code: "+1" },
-];
 
 const EAZE_LOGO_SRC = "assets/eaze-logo.png?v=3";
 const EAZE_LOGO_WHITE_SRC = "assets/eaze-logo-white.png?v=1";
@@ -349,11 +334,11 @@ function ensureChartViewDefault() {
 // EazeScore home page (real users) — lighter than loadRealUserData: only
 // needs the score/streak/session totals, not the full mood history. Calling
 // this is also what triggers the one-time welcome bonus server-side (see
-// GET /eaze-score/{phone}) — safe to call every time the home page loads,
+// GET /eaze-score/{eaze_user_id}) — safe to call every time the home page loads,
 // since the backend only ever pays it out once per user.
-async function loadHomeData(phone) {
+async function loadHomeData(userId) {
   try {
-    const scoreState = await apiGet(`/eaze-score/${phone}`);
+    const scoreState = await apiGet(`/eaze-score/${userId}`);
     Object.assign(state, {
       // Claimable balance, not lifetime earned — see computeStateFromApi.
       eazeScore: scoreState.available,
@@ -383,11 +368,11 @@ async function loadHomeData(phone) {
 // shell shows instantly, then re-renders once real data arrives. On
 // failure, falls back to an honest zeroed state rather than fake demo
 // numbers — a real user should never see scripted data.
-async function loadRealUserData(phone) {
+async function loadRealUserData(userId) {
   try {
     const [scoreState, checkIns] = await Promise.all([
-      apiGet(`/eaze-score/${phone}`),
-      apiGet(`/checkins/${phone}`),
+      apiGet(`/eaze-score/${userId}`),
+      apiGet(`/checkins/${userId}`),
     ]);
     Object.assign(state, computeStateFromApi(checkIns, scoreState));
     ensureChartViewDefault();
@@ -407,11 +392,10 @@ async function loadRealUserData(phone) {
 
 // ---------- State ----------
 const state = {
-  view: "login",
-  phone: "",
-  country: COUNTRIES[0],
-  showCountrySheet: false,
-  countrySearch: "",
+  // "no-access" (no ?user_id= and no saved session — see restoreSession),
+  // "home", "checkin", or "terms".
+  view: "no-access",
+  userId: "",
 
   // Raw check-in entries ({ value, at: Date, message }), oldest to newest —
   // the single source both chart views (multi-day overview and single-day
@@ -475,52 +459,35 @@ const state = {
 const sessionReady = (async function restoreSession() {
   const saved = localStorage.getItem("checkin_session");
 
-  // Banner entry — the real production path: users arrive via a banner link
-  // elsewhere in the Eaze ecosystem carrying the real Eaze platform user id
-  // and (usually) phone as URL params, no typed-phone login screen involved.
-  // Only honored when there's no saved session yet, so a bookmarked/
-  // revisited banner URL doesn't reprocess on every later visit.
+  // Banner entry — the only entry point. The host Eaze app hands over the
+  // real platform user id as a URL param (?user_id=...); no phone number is
+  // ever collected. Only honored when there's no saved session yet, so a
+  // bookmarked/revisited banner URL doesn't reprocess on every later visit.
   const bannerParams = new URLSearchParams(window.location.search);
   const bannerUserId = bannerParams.get("user_id");
-  let bannerPhone = bannerParams.get("phone");
   if (bannerUserId && !saved) {
-    // The banner link doesn't always include phone — fall back to resolving
-    // it server-side from eaze_user_id (see /auth/resolve-phone) before
-    // giving up on banner entry entirely.
-    if (!bannerPhone) {
-      try {
-        const resolved = await apiGet(`/auth/resolve-phone/${encodeURIComponent(bannerUserId)}`);
-        bannerPhone = resolved.phone;
-      } catch (err) {
-        console.error("Phone lookup for banner entry failed", err);
-      }
-    }
-  }
-  if (bannerUserId && bannerPhone && !saved) {
-    state.phone = bannerPhone;
+    state.userId = bannerUserId;
     state.view = "home";
     try {
-      await apiPost("/auth/login", { phone: bannerPhone, eaze_user_id: bannerUserId });
-      localStorage.setItem("checkin_session", JSON.stringify({ phone: bannerPhone, country: state.country }));
+      await apiPost("/auth/login", { eaze_user_id: bannerUserId });
+      localStorage.setItem("checkin_session", JSON.stringify({ userId: bannerUserId }));
     } catch (err) {
       console.error("Banner login failed", err);
-      state.phone = "";
-      state.view = "login";
+      state.userId = "";
+      state.view = "no-access";
       render();
     }
     return;
   }
-  // bannerUserId present but no phone (param or lookup) resolved — falls
-  // through to the typed-phone login screen below, same as no banner at all.
 
   if (!saved) return;
   try {
     const parsed = JSON.parse(saved);
-    state.phone = parsed.phone || "";
-    state.country = parsed.country || COUNTRIES[0];
+    state.userId = parsed.userId || "";
   } catch {
     return;
   }
+  if (!state.userId) return;
   // Land on the EazeScore home page every time, same as right after login —
   // show the clean/zeroed shell immediately, then fetch actual persisted
   // data below (after the initial render() at the bottom of this file).
@@ -556,7 +523,10 @@ function queryEls() {
 }
 
 // ---------- Templates ----------
-function loginPage() {
+// Shown when the app is opened without a valid ?user_id= banner param and
+// no session is already saved — this app collects no other identifying
+// information, so there is nothing else to fall back to.
+function noAccessPage() {
   return `
     <div class="login-screen">
       <div class="login-inner">
@@ -565,62 +535,8 @@ function loginPage() {
           <span class="login-wordmark">eazeapp</span>
         </div>
 
-        <h1 class="login-headline">Login to get started</h1>
-
-        <div class="login-input-row">
-          <button id="country-picker-btn" class="country-picker-btn" type="button">
-            <span class="country-flag">${state.country.flag}</span>
-            <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true"><path d="M2 3.5L5 6.5L8 3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            <span class="country-code">${state.country.code}</span>
-          </button>
-          <input
-            id="phone-input"
-            type="text"
-            inputmode="numeric"
-            autocomplete="off"
-            maxlength="10"
-            placeholder="Enter mobile number"
-            value="${state.phone}"
-            class="phone-input"
-          />
-        </div>
-
-        <div id="login-btn-wrap" class="login-btn-wrap">
-          <div id="login-progress-fill" class="login-progress-fill"></div>
-          <button id="login-btn" class="login-btn" type="button">
-            <span id="login-btn-label">Login</span>
-          </button>
-        </div>
-        <p class="login-error" id="login-error"></p>
-      </div>
-    </div>
-    ${state.showCountrySheet ? countrySheet() : ""}
-  `;
-}
-
-function countrySheet() {
-  const query = state.countrySearch.toLowerCase();
-  const filtered = COUNTRIES.filter(
-    (c) => c.name.toLowerCase().includes(query) || c.code.includes(query)
-  );
-  return `
-    <div id="sheet-overlay" class="sheet-overlay"></div>
-    <div id="country-sheet" class="country-sheet">
-      <div class="sheet-handle-wrap"><div class="sheet-handle"></div></div>
-      <div class="sheet-search-wrap">
-        <input id="country-search" type="text" placeholder="Search for country" autocomplete="off"
-          value="${state.countrySearch}" class="sheet-search" />
-      </div>
-      <div class="sheet-list">
-        ${filtered
-          .map(
-            (c) => `
-          <button class="country-option" data-code="${c.code}" data-flag="${c.flag}" data-name="${c.name}">
-            <span class="country-option-flag">${c.flag}</span>
-            <span class="country-option-name">${c.name} (${c.code})</span>
-          </button>`
-          )
-          .join("")}
+        <h1 class="login-headline">Open this from the Eaze app</h1>
+        <p class="no-access-copy">Daily Check-in only works when opened from inside the Eaze app.</p>
       </div>
     </div>
   `;
@@ -1069,10 +985,8 @@ function render() {
     homeCooldownTimer = null;
   }
 
-  if (state.view === "login") {
-    root.innerHTML = loginPage();
-    wireLoginEvents();
-    if (state.showCountrySheet) wireCountrySheetEvents();
+  if (state.view === "no-access") {
+    root.innerHTML = noAccessPage();
   } else if (state.view === "home") {
     root.innerHTML =
       homePage() +
@@ -1130,121 +1044,13 @@ function render() {
   }
 }
 
-// ---------- Login wiring ----------
-function wireLoginEvents() {
-  const loginBtn = document.getElementById("login-btn");
-  if (!loginBtn) return;
-
-  loginBtn.addEventListener("click", () => {
-    const input = document.getElementById("phone-input");
-    const phone = (input ? input.value : "").replace(/\D/g, "");
-    if (phone.length < 7) {
-      input.focus();
-      return;
-    }
-
-    state.phone = phone;
-    loginBtn.disabled = true;
-    document.getElementById("login-btn-label").textContent = "Logging in…";
-    document.getElementById("login-error").textContent = "";
-
-    const fill = document.getElementById("login-progress-fill");
-    const btnWrap = document.getElementById("login-btn-wrap");
-    fill?.classList.add("crawling");
-    btnWrap?.classList.add("loading");
-
-    setTimeout(() => {
-      localStorage.setItem("checkin_session", JSON.stringify({ phone, country: state.country }));
-
-      fill?.classList.remove("crawling");
-      fill?.classList.add("done");
-      const label = document.getElementById("login-btn-label");
-      if (label) label.textContent = "✓ Logged in";
-
-      setTimeout(async () => {
-        // Resolves/creates the user row up front (see app/routers/auth.py)
-        // so the home page's first GET /eaze-score call below always finds
-        // a real user and can award the welcome bonus correctly.
-        try {
-          await apiPost("/auth/login", { phone });
-        } catch (err) {
-          console.error("Login call failed", err);
-        }
-        state.view = "home";
-        render();
-        loadHomeData(phone);
-      }, 350);
-    }, 1100);
-  });
-
-  const phoneInput = document.getElementById("phone-input");
-  if (phoneInput) {
-    phoneInput.addEventListener("input", (e) => {
-      state.phone = e.target.value.replace(/\D/g, "");
-      e.target.value = state.phone;
-    });
-    phoneInput.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") document.getElementById("login-btn")?.click();
-    });
-  }
-
-  document.getElementById("country-picker-btn")?.addEventListener("click", () => {
-    state.showCountrySheet = true;
-    state.countrySearch = "";
-    render();
-  });
-}
-
-function wireCountrySheetEvents() {
-  document.getElementById("sheet-overlay")?.addEventListener("click", () => {
-    state.showCountrySheet = false;
-    render();
-  });
-
-  document.getElementById("country-search")?.addEventListener("input", (e) => {
-    state.countrySearch = e.target.value;
-    const sheet = document.getElementById("country-sheet");
-    if (!sheet) return;
-    const query = state.countrySearch.toLowerCase();
-    const filtered = COUNTRIES.filter(
-      (c) => c.name.toLowerCase().includes(query) || c.code.includes(query)
-    );
-    const listEl = sheet.querySelector(".sheet-list");
-    if (listEl) {
-      listEl.innerHTML = filtered
-        .map(
-          (c) => `
-        <button class="country-option" data-code="${c.code}" data-flag="${c.flag}" data-name="${c.name}">
-          <span class="country-option-flag">${c.flag}</span>
-          <span class="country-option-name">${c.name} (${c.code})</span>
-        </button>`
-        )
-        .join("");
-      wireCountryOptionEvents();
-    }
-  });
-
-  wireCountryOptionEvents();
-}
-
-function wireCountryOptionEvents() {
-  document.querySelectorAll(".country-option").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      state.country = { flag: btn.dataset.flag, name: btn.dataset.name, code: btn.dataset.code };
-      state.showCountrySheet = false;
-      state.countrySearch = "";
-      render();
-    });
-  });
-}
-
 // ---------- Terms page wiring ----------
 function wireTermsEvents() {
   document.getElementById("back-to-home-from-terms-btn")?.addEventListener("click", () => {
     const returnView = state.termsReturnView;
     state.view = returnView;
     render();
-    if (returnView === "home" && state.phone) loadHomeData(state.phone);
+    if (returnView === "home" && state.userId) loadHomeData(state.userId);
   });
 }
 
@@ -1274,7 +1080,7 @@ function wireCheckinEvents() {
   document.getElementById("back-to-home-btn")?.addEventListener("click", () => {
     state.view = "home";
     render();
-    if (state.phone) loadHomeData(state.phone);
+    if (state.userId) loadHomeData(state.userId);
   });
 
   // Whole card is the click target, not just the inner label — the inner
@@ -1328,7 +1134,7 @@ function navigateToCheckin() {
   // they'd desync from what's actually true until the fetch below lands.
   state.selectedMood = null;
   render();
-  if (state.phone) loadRealUserData(state.phone);
+  if (state.userId) loadRealUserData(state.userId);
 }
 
 // ---------- Home page wiring ----------
@@ -1351,10 +1157,10 @@ function wireHomeEvents() {
 
   document.getElementById("checkin-banner-btn")?.addEventListener("click", () => {
     navigateToCheckin();
-    if (state.phone) {
+    if (state.userId) {
       // Fire-and-forget — logs this banner tap (see CheckinBannerLog on the
       // backend); never blocks or fails the navigation it's tracking.
-      apiPost("/checkins/banner-click", { phone: state.phone }).catch((err) => {
+      apiPost("/checkins/banner-click", { eaze_user_id: state.userId }).catch((err) => {
         console.error("Failed to log banner click", err);
       });
     }
@@ -1452,7 +1258,7 @@ async function handleClaimSubmit() {
   state.claiming = true;
   render();
   try {
-    const claim = await apiPost("/eaze-score/claim", { phone: state.phone });
+    const claim = await apiPost("/eaze-score/claim", { eaze_user_id: state.userId });
     const ok = claim.status === "mock_success" || claim.status === "submitted";
     state.eazeScore = 0;
     state.claimResult = {
@@ -1825,7 +1631,7 @@ async function handleSave() {
   // state, never compute it ourselves.
   try {
     const note = els.textarea.value.trim() || null;
-    const result = await apiPost("/checkins", { phone: state.phone, mood, note });
+    const result = await apiPost("/checkins", { eaze_user_id: state.userId, mood, note });
 
     state.checkInEntries = [...state.checkInEntries, { value: mood, at: now, message }].slice(-RAW_ENTRIES_CAP);
     if (state.chartView === "day" && !state.chartSelectedDate) {
@@ -1870,7 +1676,7 @@ render();
 // initial render above shows the clean shell, this fetches their actual
 // persisted score/history once restoreSession has settled.
 sessionReady.then(() => {
-  if (state.view === "home" && state.phone) {
-    loadHomeData(state.phone);
+  if (state.view === "home" && state.userId) {
+    loadHomeData(state.userId);
   }
 });
