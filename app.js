@@ -456,15 +456,38 @@ const state = {
   termsReturnView: "home",
 };
 
+// The banner link's user_id comes base64-encoded — decode it before it's
+// used anywhere. atob() is lenient and silently produces garbage bytes for
+// input that isn't actually valid base64 (e.g. a plain numeric id passed
+// unencoded during local testing), so the decoded result is round-tripped
+// back through btoa() to confirm it's genuinely base64 before it's trusted;
+// otherwise this returns "" (treated the same as no user_id at all) rather
+// than risk logging a user in under a corrupted id. Also accepts the
+// URL-safe base64 variant (-/_ instead of +//, no padding).
+function decodeBannerUserId(raw) {
+  if (!raw) return "";
+  let normalized = raw.replace(/-/g, "+").replace(/_/g, "/");
+  while (normalized.length % 4 !== 0) normalized += "=";
+  try {
+    const decoded = atob(normalized);
+    if (btoa(decoded) === normalized) return decoded;
+  } catch (err) {
+    // falls through to the error below
+  }
+  console.error("banner user_id was not valid base64, ignoring:", raw);
+  return "";
+}
+
 const sessionReady = (async function restoreSession() {
   const saved = localStorage.getItem("checkin_session");
 
   // Banner entry — the only entry point. The host Eaze app hands over the
-  // real platform user id as a URL param (?user_id=...); no phone number is
-  // ever collected. Only honored when there's no saved session yet, so a
-  // bookmarked/revisited banner URL doesn't reprocess on every later visit.
+  // real platform user id, base64-encoded, as a URL param (?user_id=...);
+  // no phone number is ever collected. Only honored when there's no saved
+  // session yet, so a bookmarked/revisited banner URL doesn't reprocess on
+  // every later visit.
   const bannerParams = new URLSearchParams(window.location.search);
-  const bannerUserId = bannerParams.get("user_id");
+  const bannerUserId = decodeBannerUserId(bannerParams.get("user_id"));
   if (bannerUserId && !saved) {
     state.userId = bannerUserId;
     state.view = "home";
